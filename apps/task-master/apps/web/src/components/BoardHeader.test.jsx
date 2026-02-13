@@ -7,6 +7,7 @@ test('renders BoardHeader with title and actions', () => {
     <BoardHeader
       title="Story Board"
       onBack={() => {}}
+      backLabel="Projects"
       rightActions={<button>Action</button>}
     />
   );

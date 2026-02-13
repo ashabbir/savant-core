@@ -6,14 +6,14 @@ test('renders AppHeader with toggles', () => {
   render(
     <AppHeader
       leftCollapsed={true}
-      setLeftCollapsed={() => {}}
+      onToggleLeft={() => {}}
       rightCollapsed={true}
-      setRightCollapsed={() => {}}
+      onToggleRight={() => {}}
       selectedProjectId="p1"
     />
   );
 
   expect(screen.getByText('Task Master')).toBeInTheDocument();
   expect(screen.getByLabelText('Toggle filters')).toBeInTheDocument();
-  expect(screen.getByTitle('Show right panel')).toBeInTheDocument();
+  expect(screen.getByTitle('Show sidebar')).toBeInTheDocument();
 });

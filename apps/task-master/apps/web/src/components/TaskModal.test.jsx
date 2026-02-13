@@ -90,10 +90,10 @@ test('displays Epic color field when type is epic', () => {
       projects={mockProjects}
       users={mockUsers}
       epics={mockEpics}
-      initialType="epic"
     />
   );
 
+  fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'epic' } });
   expect(screen.getByLabelText('Epic color')).toBeInTheDocument();
   expect(screen.queryByLabelText('Epic')).not.toBeInTheDocument(); // Epic select should not be there
 });
