@@ -62,5 +62,158 @@
     "startedAt": "2026-02-13T02:29:47.070Z",
     "completedAt": "2026-02-13T02:29:47.106Z",
     "error": null
+  },
+  {
+    "id": "2298b64e-f26e-49e7-889d-5ca08cabbda7",
+    "event": "repo.created",
+    "payload": {
+      "repo_id": "4ffbb88f-7481-4f9e-a1dc-29007359637a",
+      "path": "https://github.com/ashabbir/savant-core",
+      "name": "savant-core",
+      "agent_id": "shared"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "createdAt": "2026-02-13T02:53:30.535Z",
+    "updatedAt": "2026-02-13T03:06:45.816Z",
+    "startedAt": "2026-02-13T03:06:43.673Z",
+    "completedAt": "2026-02-13T03:06:45.816Z",
+    "error": null
+  },
+  {
+    "id": "7f673ce3-ec8e-40e3-8ca4-0a7bab248d14",
+    "event": "repo.created",
+    "payload": {
+      "repo_id": "1f718735-d1b4-450d-b909-db944f5e41ed",
+      "path": "/repo",
+      "name": "delete-e2e-repo",
+      "agent_id": "shared"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "createdAt": "2026-02-13T02:57:07.909Z",
+    "updatedAt": "2026-02-13T03:06:48.788Z",
+    "startedAt": "2026-02-13T03:06:48.682Z",
+    "completedAt": "2026-02-13T03:06:48.788Z",
+    "error": null
+  },
+  {
+    "id": "87aec519-8053-414e-b41d-e2aad3640407",
+    "event": "repo.created",
+    "payload": {
+      "repo_id": "8df1a631-ee81-45ef-96fc-8ec2ab8472a9",
+      "path": "/workdir/repos",
+      "name": "delete-e2e-repo-1770951478",
+      "agent_id": "shared"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "createdAt": "2026-02-13T02:57:58.198Z",
+    "updatedAt": "2026-02-13T03:06:51.266Z",
+    "startedAt": "2026-02-13T03:06:51.126Z",
+    "completedAt": "2026-02-13T03:06:51.266Z",
+    "error": null
+  },
+  {
+    "id": "b4d15985-2f66-42f0-9135-10c20b75884e",
+    "event": "repo.created",
+    "payload": {
+      "repo_id": "ec104297-fc2d-4dbc-b55c-5c4965ca6e46",
+      "path": "/workdir/repos",
+      "name": "delete-e2e-repo-1770951527",
+      "agent_id": "shared"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "createdAt": "2026-02-13T02:58:47.286Z",
+    "updatedAt": "2026-02-13T03:06:56.348Z",
+    "startedAt": "2026-02-13T03:06:56.133Z",
+    "completedAt": "2026-02-13T03:06:56.348Z",
+    "error": null
+  },
+  {
+    "id": "acac6080-6913-43ae-8f15-5b23ccfe043a",
+    "event": "repo.reindex",
+    "payload": {
+      "repo_id": "4ffbb88f-7481-4f9e-a1dc-29007359637a",
+      "path": "https://github.com/ashabbir/savant-core",
+      "name": "savant-core",
+      "agent_id": "shared"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "createdAt": "2026-02-13T03:08:36.585Z",
+    "updatedAt": "2026-02-13T03:08:40.404Z",
+    "startedAt": "2026-02-13T03:08:39.404Z",
+    "completedAt": "2026-02-13T03:08:40.404Z",
+    "error": null
+  },
+  {
+    "id": "bcf7e2c8-29f9-440e-8be1-db0a59956659",
+    "event": "repo.reindex",
+    "payload": {
+      "repo_id": "4ffbb88f-7481-4f9e-a1dc-29007359637a",
+      "path": "https://github.com/ashabbir/savant-core",
+      "name": "savant-core",
+      "agent_id": "shared"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "createdAt": "2026-02-13T03:11:21.763Z",
+    "updatedAt": "2026-02-13T03:11:25.173Z",
+    "startedAt": "2026-02-13T03:11:24.562Z",
+    "completedAt": "2026-02-13T03:11:25.173Z",
+    "error": null
+  },
+  {
+    "id": "27d2332b-d9a6-4e94-b5f2-ec515535ac31",
+    "event": "repo.reindex",
+    "payload": {
+      "repo_id": "4ffbb88f-7481-4f9e-a1dc-29007359637a",
+      "path": "https://github.com/ashabbir/savant-core",
+      "name": "savant-core",
+      "agent_id": "shared"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "createdAt": "2026-02-13T03:11:58.953Z",
+    "updatedAt": "2026-02-13T03:12:00.313Z",
+    "startedAt": "2026-02-13T03:11:59.585Z",
+    "completedAt": "2026-02-13T03:12:00.313Z",
+    "error": null
+  },
+  {
+    "id": "8b9de0c5-e987-4102-bb37-0527f9577db0",
+    "event": "repo.reindex",
+    "payload": {
+      "repo_id": "4ffbb88f-7481-4f9e-a1dc-29007359637a",
+      "path": "https://github.com/ashabbir/savant-core",
+      "name": "savant-core",
+      "agent_id": "shared"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "createdAt": "2026-02-13T03:11:59.696Z",
+    "updatedAt": "2026-02-13T03:12:05.181Z",
+    "startedAt": "2026-02-13T03:12:04.590Z",
+    "completedAt": "2026-02-13T03:12:05.181Z",
+    "error": null
+  },
+  {
+    "id": "8e92a018-920a-4871-b19f-be01c0f72ff9",
+    "event": "repo.reindex",
+    "payload": {
+      "repo_id": "4ffbb88f-7481-4f9e-a1dc-29007359637a",
+      "path": "https://github.com/ashabbir/savant-core",
+      "name": "savant-core",
+      "agent_id": "shared"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "createdAt": "2026-02-13T03:46:03.319Z",
+    "updatedAt": "2026-02-13T03:46:07.884Z",
+    "startedAt": "2026-02-13T03:46:07.360Z",
+    "completedAt": "2026-02-13T03:46:07.884Z",
+    "error": null
   }
 ]

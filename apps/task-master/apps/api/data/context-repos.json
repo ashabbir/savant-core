@@ -13,19 +13,6 @@
     "updatedAt": "2026-02-11T17:49:10.016Z"
   },
   {
-    "id": "65958361-79f5-455c-ba16-71afaf1fb5ea",
-    "repoName": "task master",
-    "repoPath": "/Users/ahmedshabbir/code/savant-core/apps/task-master",
-    "projectId": "69841b79fc994d7e2152ff8a",
-    "enabled": true,
-    "lastIndexedAt": null,
-    "lastFileCount": 0,
-    "lastChunkCount": 0,
-    "lastError": "Path does not exist: /Users/ahmedshabbir/code/savant-core/apps/task-master",
-    "createdAt": "2026-02-11T17:57:52.044Z",
-    "updatedAt": "2026-02-12T04:02:39.733Z"
-  },
-  {
     "id": "repo-e2e-001",
     "repoName": "e2e-context-demo2",
     "repoPath": "/tmp/e2e-context-demo2",
@@ -38,5 +25,21 @@
     "lastError": "savant-context index failed: spawnSync savant-context ENOENT",
     "createdAt": "2026-02-13T02:27:38.344Z",
     "updatedAt": "2026-02-13T02:29:47.105Z"
+  },
+  {
+    "id": "4ffbb88f-7481-4f9e-a1dc-29007359637a",
+    "repoName": "savant-core",
+    "repoPath": "https://github.com/ashabbir/savant-core",
+    "projectId": "69841b79fc994d7e2152ff8a",
+    "enabled": true,
+    "indexStatus": "INDEXED",
+    "indexAcceptedAt": "2026-02-13T03:46:07.884Z",
+    "lastIndexedAt": "2026-02-13T03:46:07.781Z",
+    "lastFileCount": 740,
+    "lastChunkCount": 3527,
+    "lastError": null,
+    "createdAt": "2026-02-13T02:53:30.531Z",
+    "updatedAt": "2026-02-13T03:46:07.884Z",
+    "worktreePath": "/workdir/worktrees/savant-core/shared"
   }
 ]
