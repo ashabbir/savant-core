@@ -172,20 +172,22 @@ function ProjectSettingsDrawer({ project, onClose, onSave, onDelete, isSaving, a
 
   const createRepoMutation = useMutation({
     mutationFn: (payload) => apiPost('/api/context/repos', payload).then(res => res.data),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['context-repos', project?.id] });
       setShowRepoModal(false);
       setRepoInput({ repoName: '', repoPath: '' });
+      onNotify?.(`Repository ${data?.repoName || 'repo'} queued for indexing`, 'info');
     },
-    onError: (err) => alert(`Add repository failed: ${err.message}`)
+    onError: (err) => onNotify?.(`Add repository failed: ${err.message}`, 'error')
   });
 
   const reindexRepoMutation = useMutation({
     mutationFn: (repoName) => apiPost(`/api/context/repos/${encodeURIComponent(repoName)}/reindex`).then(res => res.data),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['context-repos', project?.id] });
+      onNotify?.(`Repository ${data?.repoName || 'repo'} job queued`, 'info');
     },
-    onError: (err) => alert(`Reindex failed: ${err.message}`)
+    onError: (err) => onNotify?.(`Reindex failed: ${err.message}`, 'error')
   });
 
   const deleteRepoMutation = useMutation({
@@ -219,6 +221,7 @@ function ProjectSettingsDrawer({ project, onClose, onSave, onDelete, isSaving, a
   const selectedFileObj = analysisFiles.find((f) => f.filePath === selectedAnalysisFile) || analysisFiles[0] || null;
   const analysisStatus = String(analysisQuery.data?.status || 'idle').toLowerCase();
   const lastAnalysisStateRef = useRef({ status: analysisStatus, jobId: analysisQuery.data?.jobId || '' });
+  const lastRepoIndexStateRef = useRef(new Map());
 
   useEffect(() => {
     if (activeTab !== 'analysis') return;
@@ -243,6 +246,33 @@ function ProjectSettingsDrawer({ project, onClose, onSave, onDelete, isSaving, a
     }
     lastAnalysisStateRef.current = next;
   }, [activeTab, analysisStatus, analysisQuery.data?.jobId, analysisQuery.data?.lastError, onNotify]);
+
+  useEffect(() => {
+    if (activeTab !== 'repo') return;
+
+    const previous = lastRepoIndexStateRef.current;
+    const next = new Map();
+
+    for (const repo of contextRepos) {
+      const key = String(repo.id || repo.repoName || '');
+      if (!key) continue;
+
+      const nextStatus = String(repo.indexStatus || '').toUpperCase() || 'UNKNOWN';
+      const prev = previous.get(key);
+      const prevStatus = String(prev?.status || '').toUpperCase();
+      const wasWorking = prevStatus === 'QUEUED' || prevStatus === 'INDEXING';
+
+      if (prev && wasWorking && nextStatus === 'INDEXED') {
+        onNotify?.(`Repository ${repo.repoName} indexing finished`, 'success');
+      } else if (prev && wasWorking && nextStatus === 'FAILED') {
+        onNotify?.(`Repository ${repo.repoName} indexing failed${repo?.lastError ? `: ${repo.lastError}` : ''}`, 'error');
+      }
+
+      next.set(key, { status: nextStatus });
+    }
+
+    lastRepoIndexStateRef.current = next;
+  }, [activeTab, contextRepos, onNotify]);
 
   return (
     <aside className="details">
