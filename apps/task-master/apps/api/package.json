@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "test:unit": "node --test test/validate.test.js test/talon.test.js test/routingRules.test.js test/taskMoves.test.js test/contextQueue.test.js test/contextIndexWorker.test.js test/contextSync.test.js test/jarvisContextCommand.test.js",
+    "test:unit": "node --test test/validate.test.js test/talon.test.js test/routingRules.test.js test/taskMoves.test.js test/contextQueue.test.js test/contextIndexWorker.test.js test/contextSync.test.js",
     "test:integration": "node --test test/api.test.js",
     "test:all": "node --test test/*.test.js",
     "test:watch": "node --test --watch test/*.test.js",

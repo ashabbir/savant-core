@@ -370,7 +370,7 @@ function CommandBar({ inFooter = false }) {
               <div className="jarvisEmpty">
                 Start a conversation with Jarvis...
                 <br />
-                Try: <code>/repos</code>, <code>/search savant-core createContextMcpTool</code>, <code>/read savant-core README.md</code>
+                Ask naturally about code; Jarvis will use indexed repo search when needed.
               </div>
             )}
 
@@ -403,7 +403,7 @@ function CommandBar({ inFooter = false }) {
               className="jarvisInput"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Message Jarvis... (/search <repo> <query>)"
+              placeholder="Message Jarvis..."
               disabled={isSending}
               rows={1}
               onKeyDown={(e) => {

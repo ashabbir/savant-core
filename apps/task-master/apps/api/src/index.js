@@ -20,11 +20,6 @@ import { createContextQueue } from './context-queue.js';
 import { createRepoObserver } from './repo-observer.js';
 import { createContextIndexWorker } from './context-index-worker.js';
 import { buildReindexPayload, shouldQueueReindex } from './context-sync.js';
-import {
-  parseJarvisContextCommand,
-  executeJarvisContextCommand,
-  formatJarvisContextCommandResult
-} from './jarvis-context-command.js';
 
 const app = express();
 app.use(cors());
@@ -1212,6 +1207,212 @@ const JARVIS_CANONICAL_NAME = 'Jarvis';
 const JARVIS_CANONICAL_KEY = 'jarvis';
 const JARVIS_DEFAULT_MODEL = 'ollama/llama3.1';
 
+function buildJarvisContextToolGuidance() {
+  const repos = readContextRepos()
+    .filter((repo) => repo?.enabled !== false)
+    .map((repo) => String(repo?.repoName || '').trim())
+    .filter(Boolean)
+    .slice(0, 30);
+
+  const repoText = repos.length
+    ? repos.map((name) => `- ${name}`).join('\n')
+    : '- none';
+
+  return [
+    'You have access to the Context MCP tool `context_mcp` for repository intelligence.',
+    'Decide autonomously when to call it for codebase/repository questions.',
+    'Rule: for any question asking about code locations, symbols, file paths, implementation details, or repository content, you MUST call context_mcp before answering.',
+    'If you cannot call the tool or no index exists, say that explicitly.',
+    'Tool actions: list_repos, code_search, code_read, memory_search, memory_read.',
+    'Prefer code_search before code_read to narrow files, then read only relevant files.',
+    'If repo is ambiguous, call list_repos first. Never fabricate file contents.',
+    'Indexed repos currently available:',
+    repoText
+  ].join('\n');
+}
+
+function parseFirstJsonObject(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    return JSON.parse(raw.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+function inferLookupFromMessage(params) {
+  const message = String(params?.message || '').trim();
+  const defaultRepo = String(params?.defaultRepo || '').trim();
+  if (!message || !defaultRepo) return null;
+  const lower = message.toLowerCase();
+  const looksCodeQuestion =
+    /\b(where is|file path|defined|definition|implementation|class|function|method|symbol)\b/i.test(lower)
+    || /\b(repo|repository|codebase|source code)\b/i.test(lower);
+  if (!looksCodeQuestion) return null;
+
+  const symbolMatch = message.match(/\b(?:where is|find|locate)\s+([A-Za-z_][A-Za-z0-9_]*)\b/i);
+  const fallbackQuery = symbolMatch?.[1] || message.slice(0, 120);
+  return {
+    tool: 'code_search',
+    args: {
+      repo: defaultRepo,
+      query: fallbackQuery
+    },
+    reason: 'heuristic-fallback'
+  };
+}
+
+function resolvePreferredContextRepo(message) {
+  const text = String(message || '').toLowerCase();
+  const repoRows = readContextRepos()
+    .filter((repo) => repo?.enabled !== false)
+    .map((repo) => ({
+      name: String(repo?.repoName || '').trim(),
+      indexed: !!repo?.lastIndexedAt
+    }))
+    .filter((repo) => repo.name);
+  const fromMessage = repoRows.find((repo) => text.includes(repo.name.toLowerCase()))?.name || '';
+  const indexed = repoRows.find((repo) => repo.indexed)?.name || '';
+  return fromMessage || indexed || (repoRows.length === 1 ? repoRows[0].name : '');
+}
+
+function summarizeContextLookupData(tool, data) {
+  if (tool === 'list_repos') {
+    const repos = Array.isArray(data?.repos) ? data.repos : [];
+    return repos
+      .slice(0, 20)
+      .map((repo, i) => `${i + 1}. ${repo?.repo_name || ''} files=${repo?.files_indexed || 0} chunks=${repo?.chunks_indexed || 0}`)
+      .join('\n');
+  }
+  if (tool === 'code_search' || tool === 'memory_search') {
+    const rows = Array.isArray(data) ? data : [];
+    return rows
+      .slice(0, 20)
+      .map((row, i) => `${i + 1}. ${row?.file || row?.path || 'unknown'}:${row?.line || row?.startLine || '?'} ${String(row?.snippet || row?.text || '').trim()}`)
+      .join('\n');
+  }
+  if (tool === 'code_read' || tool === 'memory_read') {
+    const path = String(data?.path || '');
+    const content = String(data?.content || data?.text || '').slice(0, 16000);
+    return `${path}\n${content}`;
+  }
+  return JSON.stringify(data || {}, null, 2).slice(0, 16000);
+}
+
+async function runContextLookup(params) {
+  const command = params?.command || {};
+  const gatewayUrl = String(params?.gatewayUrl || 'http://localhost:4444').trim();
+  const gatewayToken = String(params?.gatewayToken || '').trim();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(gatewayToken ? { Authorization: `Bearer ${gatewayToken}` } : {})
+  };
+
+  const tool = String(command.tool || '').trim();
+  if (!tool) return { ok: false, error: 'missing-tool' };
+  if (tool === 'list_repos') {
+    const response = await fetch(new URL('/v1/index/repos', gatewayUrl), {
+      method: 'GET',
+      headers,
+      signal: AbortSignal.timeout(10000)
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) return { ok: false, error: payload?.message || payload?.error || `http-${response.status}` };
+    return { ok: true, data: payload?.data };
+  }
+
+  const response = await fetch(new URL(`/v1/mcps/context/tools/${encodeURIComponent(tool)}/run`, gatewayUrl), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ arguments: command.args || {} }),
+    signal: AbortSignal.timeout(12000)
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) return { ok: false, error: payload?.message || payload?.error || `http-${response.status}` };
+  return { ok: true, data: payload?.data };
+}
+
+async function decideJarvisContextLookup(params) {
+  const gatewayUrl = params?.gatewayUrl;
+  const token = params?.token || '';
+  const agentKey = params?.agentKey;
+  const sessionKey = params?.sessionKey;
+  const message = String(params?.message || '').trim();
+  if (!gatewayUrl || !agentKey || !message) return null;
+
+  const repoRows = readContextRepos()
+    .filter((repo) => repo?.enabled !== false)
+    .map((repo) => ({
+      name: String(repo?.repoName || '').trim(),
+      indexed: !!repo?.lastIndexedAt
+    }))
+    .filter((repo) => repo.name);
+  const repoNames = repoRows.map((repo) => repo.name);
+  const defaultRepo = resolvePreferredContextRepo(message);
+  const plannerModel = String(
+    params?.plannerModel
+    || process.env.JARVIS_CONTEXT_PLANNER_MODEL
+    || 'openai-codex/gpt-5.3-codex'
+  ).trim();
+
+  const plannerBody = {
+    model: plannerModel || `talon:${agentKey}`,
+    messages: [
+      {
+        role: 'system',
+        content: [
+          'You are a lookup planner for repo QA.',
+          'Return strict JSON only.',
+          'Schema: {"needsContext":boolean,"tool":"none|list_repos|code_search|code_read|memory_search|memory_read","repo":"string","query":"string","path":"string","reason":"string"}',
+          'Set needsContext=true when question requires repository facts, symbols, file paths, implementations, or indexed docs.',
+          `Available repos: ${repoNames.join(', ') || 'none'}`,
+          `Default repo: ${defaultRepo || 'none'}`
+        ].join('\n')
+      },
+      { role: 'user', content: message }
+    ],
+    metadata: { sessionKey: `${sessionKey}:context-planner` }
+  };
+
+  const response = await fetch(new URL('/v1/chat/completions', gatewayUrl), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(plannerModel.startsWith('talon:') ? { 'x-talon-agent-id': agentKey } : {}),
+      'x-talon-session-key': `${sessionKey}:context-planner`
+    },
+    body: JSON.stringify(plannerBody),
+    signal: AbortSignal.timeout(15000)
+  });
+  if (!response.ok) {
+    return inferLookupFromMessage({ message, defaultRepo });
+  }
+  const payload = await readTalonResponse(response);
+  const text = extractTalonResponseText(payload.json);
+  const parsed = parseFirstJsonObject(text);
+  if (!parsed || parsed.needsContext !== true) {
+    return inferLookupFromMessage({ message, defaultRepo });
+  }
+
+  const tool = String(parsed.tool || '').trim();
+  if (!tool || tool === 'none') return null;
+  const repo = String(parsed.repo || '').trim() || defaultRepo;
+  const query = String(parsed.query || '').trim();
+  const path = String(parsed.path || '').trim();
+
+  const args = {
+    ...(repo ? { repo } : {}),
+    ...(query ? { query } : {}),
+    ...(path ? { path } : {})
+  };
+  return { tool, args, reason: String(parsed.reason || '').trim() };
+}
+
 function normalizeLower(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -1355,6 +1556,8 @@ app.get('/api/jarvis/sessions', async (req, res) => {
   const gatewayUrl = process.env.TALON_GATEWAY_URL;
   if (!gatewayUrl) return bad(res, 503, 'Talon gateway not configured');
   const token = process.env.TALON_GATEWAY_TOKEN || '';
+  const contextGatewayUrl = process.env.CONTEXT_GATEWAY_URL || 'http://localhost:4444';
+  const contextGatewayToken = process.env.CONTEXT_GATEWAY_TOKEN || '';
   const jarvis = await ensureJarvisMainAgent();
   const agentId = req.query.agentId || jarvis.talonAgentId || process.env.TALON_DEFAULT_AGENT_ID || 'jarvis';
 
@@ -3441,45 +3644,12 @@ app.post('/api/jarvis/chat', async (req, res) => {
   const parsed = JarvisChat.safeParse(req.body);
   if (!parsed.success) return bad(res, 400, 'Invalid payload', parsed.error.flatten());
 
-  const contextCommand = parseJarvisContextCommand(parsed.data.message);
-  if (contextCommand) {
-    if (contextCommand.type === 'help') {
-      return ok(res, {
-        text: formatJarvisContextCommandResult(contextCommand, null),
-        model: 'context-mcp',
-        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
-      });
-    }
-
-    const gatewayUrl = process.env.CONTEXT_GATEWAY_URL || 'http://localhost:4444';
-    const gatewayToken = process.env.CONTEXT_GATEWAY_TOKEN || '';
-    const result = await executeJarvisContextCommand({
-      command: contextCommand,
-      gatewayUrl,
-      gatewayToken
-    });
-
-    if (!result.ok) {
-      return bad(res, 502, 'Context command failed', result.error || 'unknown-error');
-    }
-
-    await logActivity({
-      action: 'jarvis.context.command',
-      detail: `${contextCommand.tool} repo=${contextCommand.args?.repo || '-'}`,
-      actor: req.user.username
-    });
-
-    return ok(res, {
-      text: formatJarvisContextCommandResult(contextCommand, result.data),
-      model: 'context-mcp',
-      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
-    });
-  }
-
   const gatewayUrl = process.env.TALON_GATEWAY_URL;
   if (!gatewayUrl) return bad(res, 503, 'Talon gateway not configured');
 
   const token = process.env.TALON_GATEWAY_TOKEN || '';
+  const contextGatewayUrl = process.env.CONTEXT_GATEWAY_URL || 'http://localhost:4444';
+  const contextGatewayToken = process.env.CONTEXT_GATEWAY_TOKEN || '';
   const jarvis = await ensureJarvisMainAgent();
   let agentId = parsed.data.agentId || jarvis.talonAgentId || process.env.TALON_DEFAULT_AGENT_ID || jarvis.id;
 
@@ -3501,17 +3671,126 @@ app.post('/api/jarvis/chat', async (req, res) => {
     .map(v => String(v || '').trim())
     .filter(Boolean)
     .join('\n\n');
+  const contextToolGuidance = buildJarvisContextToolGuidance();
+  const heuristicPlan = inferLookupFromMessage({
+    message: parsed.data.message,
+    defaultRepo: resolvePreferredContextRepo(parsed.data.message)
+  });
+  const lookupRequested = !!heuristicPlan;
+  let contextLookupBlock = '';
+  let contextLookupUsed = false;
+  let contextLookupTool = '';
+  let contextLookupData = null;
+  if (heuristicPlan?.tool) {
+    try {
+      const lookup = await runContextLookup({
+        gatewayUrl: contextGatewayUrl,
+        gatewayToken: contextGatewayToken,
+        command: heuristicPlan
+      });
+      if (lookup.ok) {
+        contextLookupUsed = true;
+        contextLookupTool = heuristicPlan.tool;
+        contextLookupData = lookup.data;
+        const summary = summarizeContextLookupData(heuristicPlan.tool, lookup.data);
+        contextLookupBlock = [
+          `Context lookup executed (${heuristicPlan.tool})`,
+          'Reason: heuristic-fallback',
+          'Use only this lookup data when answering repository facts:',
+          'If lookup data is empty or missing the requested symbol, say no indexed match was found and do not guess.',
+          summary || '(no rows)'
+        ].join('\n');
+      }
+    } catch {
+      // Continue to planner-based lookup.
+    }
+  }
+  try {
+    if (!contextLookupUsed) {
+      const lookupPlan = await decideJarvisContextLookup({
+        gatewayUrl,
+        token,
+        agentKey,
+        sessionKey: talonSessionKey,
+        message: parsed.data.message,
+        plannerModel: agent?.defaultModel || agent?.model || jarvis?.defaultModel || jarvis?.model
+      });
+      if (lookupPlan?.tool) {
+      const lookup = await runContextLookup({
+        gatewayUrl: contextGatewayUrl,
+        gatewayToken: contextGatewayToken,
+        command: lookupPlan
+      });
+      if (lookup.ok) {
+        contextLookupTool = lookupPlan.tool;
+        contextLookupData = lookup.data;
+        const summary = summarizeContextLookupData(lookupPlan.tool, lookup.data);
+        contextLookupUsed = true;
+        contextLookupBlock = [
+          `Context lookup executed (${lookupPlan.tool})`,
+          lookupPlan.reason ? `Reason: ${lookupPlan.reason}` : null,
+          'Use only this lookup data when answering repository facts:',
+          'If lookup data is empty or missing the requested symbol, say no indexed match was found and do not guess.',
+          summary || '(no rows)'
+        ].filter(Boolean).join('\n');
+      }
+    }
+    }
+  } catch {
+    // Best-effort planner/lookup; chat continues without it.
+  }
+
+  const asksForPath = /\b(file path|path only|where is|where.*defined|defined in)\b/i.test(parsed.data.message);
+  if (contextLookupUsed && contextLookupTool === 'code_search' && asksForPath) {
+    const rows = Array.isArray(contextLookupData) ? contextLookupData : [];
+    if (!rows.length) {
+      return ok(res, {
+        text: 'No indexed match found for that symbol in the current context index.',
+        model: 'context-mcp',
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+      });
+    }
+    const firstPath = String(rows[0]?.file || rows[0]?.path || '').trim();
+    if (firstPath) {
+      return ok(res, {
+        text: firstPath,
+        model: 'context-mcp',
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+      });
+    }
+  }
+
+  const modelMessages = [];
+  if (runtimeHints) modelMessages.push({ role: 'system', content: runtimeHints });
+  modelMessages.push({ role: 'system', content: contextToolGuidance });
+  if (contextLookupBlock) modelMessages.push({ role: 'system', content: contextLookupBlock });
+  modelMessages.push({ role: 'user', content: parsed.data.message });
+  const directModelCandidates = [
+    process.env.JARVIS_CONTEXT_RESPONSE_MODEL,
+    'openai-codex/gpt-5.3-codex',
+    agent?.defaultModel,
+    agent?.model,
+    jarvis?.defaultModel,
+    jarvis?.model,
+    'google-antigravity/gemini-3-flash'
+  ]
+    .map((v) => String(v || '').trim())
+    .filter(Boolean)
+    .filter((v, idx, arr) => arr.indexOf(v) === idx);
+  const selectedModel = (contextLookupUsed || lookupRequested)
+    ? (directModelCandidates[0] || `talon:${agentKey}`)
+    : `talon:${agentKey}`;
 
   const body = {
-    model: `talon:${agentKey}`,
-    messages: [{ role: 'user', content: parsed.data.message }],
+    model: selectedModel,
+    messages: modelMessages,
     metadata: { sessionKey: talonSessionKey }
   };
 
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    'x-talon-agent-id': agentKey,
+    ...(selectedModel.startsWith('talon:') ? { 'x-talon-agent-id': agentKey } : {}),
     'x-talon-session-key': talonSessionKey
   };
 
@@ -3537,6 +3816,7 @@ app.post('/api/jarvis/chat', async (req, res) => {
     if (shouldRetryDirectModel) {
       const directMessages = [];
       if (runtimeHints) directMessages.push({ role: 'system', content: runtimeHints });
+      directMessages.push({ role: 'system', content: contextToolGuidance });
       directMessages.push({ role: 'user', content: parsed.data.message });
       const directHeaders = {
         'Content-Type': 'application/json',
