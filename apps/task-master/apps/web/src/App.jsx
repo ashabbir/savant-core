@@ -138,7 +138,16 @@ function ProjectSettingsDrawer({ project, onClose, onSave, onDelete, isSaving, a
   const reposQuery = useQuery({
     queryKey: ['context-repos', project?.id],
     queryFn: () => apiGet('/api/context/repos').then(res => (res.data || []).filter(r => r.projectId === project?.id)),
-    enabled: !!project?.id && activeTab === 'repo'
+    enabled: !!project?.id && activeTab === 'repo',
+    refetchInterval: (query) => {
+      if (activeTab !== 'repo') return false;
+      const rows = Array.isArray(query?.state?.data) ? query.state.data : [];
+      const hasInFlight = rows.some((r) => {
+        const status = String(r?.indexStatus || '').toUpperCase();
+        return status === 'QUEUED' || status === 'INDEXING';
+      });
+      return hasInFlight ? 2500 : false;
+    }
   });
 
   const analysisQuery = useQuery({
