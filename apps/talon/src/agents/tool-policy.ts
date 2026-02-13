@@ -32,6 +32,8 @@ export const TOOL_GROUPS: Record<string, string[]> = {
   "group:ui": ["browser", "canvas"],
   // Automation + infra
   "group:automation": ["cron", "gateway"],
+  // Context MCP tools
+  "group:context": ["context_mcp"],
   // Messaging surface
   "group:messaging": ["message"],
   // Nodes + device tools
@@ -52,6 +54,7 @@ export const TOOL_GROUPS: Record<string, string[]> = {
     "session_status",
     "memory_search",
     "memory_get",
+    "context_mcp",
     "web_search",
     "web_fetch",
     "image",
@@ -65,7 +68,7 @@ const TOOL_PROFILES: Record<ToolProfileId, ToolProfilePolicy> = {
     allow: ["session_status"],
   },
   coding: {
-    allow: ["group:fs", "group:runtime", "group:sessions", "group:memory", "image"],
+    allow: ["group:fs", "group:runtime", "group:sessions", "group:memory", "group:context", "image"],
   },
   messaging: {
     allow: [

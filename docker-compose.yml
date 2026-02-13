@@ -53,6 +53,8 @@ services:
       - TALON_DEFAULT_AGENT_ID=jarvis
       - CONTEXT_GATEWAY_URL=http://mcp-gateway:4444
       - CONTEXT_GATEWAY_TOKEN=${CONTEXT_GATEWAY_TOKEN:-dev-context-token}
+      - CONTEXT_GATEWAY_URL=http://mcp-gateway:4444
+      - CONTEXT_GATEWAY_TOKEN=${CONTEXT_GATEWAY_TOKEN:-dev-context-token}
     ports:
       - "3333:3333"
       - "1455:1455"
