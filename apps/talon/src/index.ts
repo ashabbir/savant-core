@@ -1,0 +1,83 @@
+#!/usr/bin/env node
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+import { createDefaultDeps } from "./cli/deps.js";
+import { promptYesNo } from "./cli/prompt.js";
+import { waitForever } from "./cli/wait.js";
+import { loadConfig } from "./config/config.js";
+import {
+  deriveSessionKey,
+  loadSessionStore,
+  resolveSessionKey,
+  resolveStorePath,
+  saveSessionStore,
+} from "./config/sessions.js";
+import { ensureBinary } from "./infra/binaries.js";
+import { loadDotEnv } from "./infra/dotenv.js";
+import { normalizeEnv } from "./infra/env.js";
+import { formatUncaughtError } from "./infra/errors.js";
+import { isMainModule } from "./infra/is-main.js";
+import { ensureTalonCliOnPath } from "./infra/path-env.js";
+import {
+  describePortOwner,
+  ensurePortAvailable,
+  handlePortError,
+  PortInUseError,
+} from "./infra/ports.js";
+import { assertSupportedRuntime } from "./infra/runtime-guard.js";
+import { installUnhandledRejectionHandler } from "./infra/unhandled-rejections.js";
+import { enableConsoleCapture } from "./logging.js";
+import { runCommandWithTimeout, runExec } from "./process/exec.js";
+
+loadDotEnv({ quiet: true });
+normalizeEnv();
+ensureTalonCliOnPath();
+
+// Capture all console output into structured logs while keeping stdout/stderr behavior.
+enableConsoleCapture();
+
+// Enforce the minimum supported runtime before doing any work.
+assertSupportedRuntime();
+
+import { buildProgram } from "./cli/program.js";
+
+const program = buildProgram();
+
+export {
+  createDefaultDeps,
+  deriveSessionKey,
+  describePortOwner,
+  ensureBinary,
+  ensurePortAvailable,
+  handlePortError,
+  loadConfig,
+  loadSessionStore,
+  PortInUseError,
+  promptYesNo,
+  resolveSessionKey,
+  resolveStorePath,
+  runCommandWithTimeout,
+  runExec,
+  saveSessionStore,
+  waitForever,
+};
+
+const isMain = isMainModule({
+  currentFile: fileURLToPath(import.meta.url),
+});
+
+if (isMain) {
+  // Global error handlers to prevent silent crashes from unhandled rejections/exceptions.
+  // These log the error and exit gracefully instead of crashing without trace.
+  installUnhandledRejectionHandler();
+
+  process.on("uncaughtException", (error) => {
+    console.error("[talon] Uncaught exception:", formatUncaughtError(error));
+    process.exit(1);
+  });
+
+  void program.parseAsync(process.argv).catch((err) => {
+    console.error("[talon] CLI failed:", formatUncaughtError(err));
+    process.exit(1);
+  });
+}

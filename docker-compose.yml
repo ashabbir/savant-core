@@ -1,0 +1,167 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-savant}
+      - POSTGRES_USER=${POSTGRES_USER:-savant}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-savant}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-savant} -d ${POSTGRES_DB:-savant}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mongo:
+    image: mongo:7
+    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all" ]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: [ "CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mongo-init:
+    image: mongo:7
+    depends_on:
+      mongo:
+        condition: service_healthy
+    command: >
+      mongosh --host mongo:27017 --eval "try { rs.status() } catch (e) { rs.initiate({_id:'rs0', members:[{_id:0, host:'mongo:27017'}]}) }"
+    restart: "no"
+
+  task-master-api:
+    image: node:22
+    working_dir: /repo/apps/task-master/apps/api
+    volumes:
+      - ./apps/task-master:/repo/apps/task-master
+      - agent-workdir:/workdir
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3333
+      - OAUTH_PORT=1455
+      - DATABASE_URL=mongodb://mongo:27017/task-manager?replicaSet=rs0
+      - TALON_GATEWAY_URL=http://talon:18789
+      - TALON_GATEWAY_TOKEN=${TALON_GATEWAY_TOKEN:-dev-token}
+      - TALON_DEFAULT_AGENT_ID=jarvis
+      - CONTEXT_GATEWAY_URL=http://mcp-gateway:4444
+      - CONTEXT_GATEWAY_TOKEN=${CONTEXT_GATEWAY_TOKEN:-dev-context-token}
+    ports:
+      - "3333:3333"
+      - "1455:1455"
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    command: >
+      sh -c "npm install && npx prisma db push && node prisma/seed.js && npm run dev"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  task-master-web:
+    image: node:22
+    working_dir: /repo/apps/task-master
+    volumes:
+      - ./apps/task-master:/repo/apps/task-master
+    environment:
+      - VITE_API_BASE=http://localhost:3333
+    ports:
+      - "5173:5173"
+    depends_on:
+      - task-master-api
+    command: >
+      sh -c "npm install && npm run dev:web"
+
+  talon:
+    image: node:22
+    working_dir: /repo/apps/talon
+    volumes:
+      - ./apps/talon:/repo/apps/talon
+      - talon-data:/root/.talon
+      - agent-workdir:/workdir
+    environment:
+      - HOST=0.0.0.0
+      - PORT=18789
+      - TASK_MASTER_API_URL=http://task-master-api:3333
+      - TASK_MASTER_API_KEY=${TASK_MASTER_API_KEY:-}
+      - TALON_GATEWAY_TOKEN=${TALON_GATEWAY_TOKEN:-dev-token}
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
+      - OLLAMA_API_KEY=ollama
+      - TALON_DEFAULT_AGENT_ID=jarvis
+    ports:
+      - "18790:18789"
+    depends_on:
+      - task-master-api
+    command: >
+      sh -c "npm install && TALON_A2UI_SKIP_MISSING=1 npm run build && node dist/entry.js gateway --port 18789 --bind lan --allow-unconfigured --token ${TALON_GATEWAY_TOKEN:-dev-token}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  mcp-gateway:
+    build:
+      context: ./apps/mcp-gateway
+    working_dir: /app
+    environment:
+      - HOST=0.0.0.0
+      - PORT=4444
+      - CONTEXT_DATA_DIR=/app/data
+      - REPO_WORKDIR_ROOT=/workdir
+      - TASK_MASTER_WEBHOOK_URL=http://task-master-api:3333/api/context/repos/index-completed
+      - CONTEXT_GATEWAY_TOKEN=${CONTEXT_GATEWAY_TOKEN:-dev-context-token}
+    ports:
+      - "4444:4444"
+    volumes:
+      - mcp-gateway-data:/app/data
+      - agent-workdir:/workdir
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:4444/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Test runner service for Task Master API
+  task-master-test:
+    image: node:22
+    working_dir: /repo/apps/task-master/apps/api
+    volumes:
+      - ./apps/task-master:/repo/apps/task-master
+    environment:
+      - DATABASE_URL=mongodb://mongo:27017/task-manager-test?replicaSet=rs0
+      - API_BASE=http://task-master-api:3333
+      - NODE_OPTIONS=--experimental-vm-modules
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    profiles:
+      - test
+    command: >
+      sh -c "npm install && npm run test:unit"
+
+  # Integration test runner (requires API to be running)
+  task-master-test-integration:
+    image: node:22
+    working_dir: /repo/apps/task-master/apps/api
+    volumes:
+      - ./apps/task-master:/repo/apps/task-master
+    environment:
+      - DATABASE_URL=mongodb://mongo:27017/task-manager?replicaSet=rs0
+      - API_BASE=http://task-master-api:3333
+    depends_on:
+      - task-master-api
+    profiles:
+      - test-integration
+    command: >
+      sh -c "npm install && sleep 5 && npm run test:integration"
+
+volumes:
+  postgres-data:
+  mongo-data:
+  talon-data:
+  mcp-gateway-data:
+  agent-workdir:

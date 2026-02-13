@@ -1,0 +1,66 @@
+[
+  {
+    "id": "a43573af-a77d-42c6-a51d-be53a2a150f7",
+    "event": "repo.created",
+    "payload": {
+      "repo_id": "repo-e2e-001",
+      "path": "/tmp/e2e-context-demo2",
+      "name": "e2e-context-demo2"
+    },
+    "status": "failed",
+    "attempts": 1,
+    "createdAt": "2026-02-13T02:27:38.464Z",
+    "updatedAt": "2026-02-13T02:27:38.573Z",
+    "startedAt": "2026-02-13T02:27:38.516Z",
+    "completedAt": "2026-02-13T02:27:38.573Z",
+    "error": "Gateway index request failed: 500 savant-context index failed: unsupported savant-context args: index repo /tmp/e2e-context-demo2 --name e2e-context-demo2\n"
+  },
+  {
+    "id": "ed87c538-d97d-4fd5-8d1c-91f7d5d22792",
+    "event": "repo.reindex",
+    "payload": {
+      "repo_id": "repo-e2e-001",
+      "path": "/tmp/e2e-context-demo2",
+      "name": "e2e-context-demo2"
+    },
+    "status": "failed",
+    "attempts": 1,
+    "createdAt": "2026-02-13T02:27:59.550Z",
+    "updatedAt": "2026-02-13T02:27:59.674Z",
+    "startedAt": "2026-02-13T02:27:59.598Z",
+    "completedAt": "2026-02-13T02:27:59.674Z",
+    "error": "Gateway index request failed: 500 savant-context index failed: spawnSync savant-context ENOENT"
+  },
+  {
+    "id": "5f4c22d1-9831-478e-812e-32fd6192e939",
+    "event": "repo.reindex",
+    "payload": {
+      "repo_id": "repo-e2e-001",
+      "path": "/tmp/e2e-context-demo2",
+      "name": "e2e-context-demo2"
+    },
+    "status": "failed",
+    "attempts": 1,
+    "createdAt": "2026-02-13T02:28:45.655Z",
+    "updatedAt": "2026-02-13T02:28:45.781Z",
+    "startedAt": "2026-02-13T02:28:45.705Z",
+    "completedAt": "2026-02-13T02:28:45.781Z",
+    "error": "Gateway index request failed: 500 savant-context index failed: spawnSync savant-context ENOENT"
+  },
+  {
+    "id": "6b9c6c5f-3826-4750-a64e-e11ecac72cfc",
+    "event": "repo.reindex",
+    "payload": {
+      "repo_id": "repo-e2e-001",
+      "path": "/tmp/e2e-context-demo2",
+      "name": "e2e-context-demo2"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "createdAt": "2026-02-13T02:29:47.019Z",
+    "updatedAt": "2026-02-13T02:29:47.106Z",
+    "startedAt": "2026-02-13T02:29:47.070Z",
+    "completedAt": "2026-02-13T02:29:47.106Z",
+    "error": null
+  }
+]

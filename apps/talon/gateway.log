@@ -1,0 +1,10 @@
+│
+◇  Doctor warnings ───────────────────────────────────────────╮
+│                                                             │
+│  - State dir migration skipped: target already exists       │
+│    (/Users/ahmedshabbir/.talon). Remove or merge manually.  │
+│                                                             │
+├─────────────────────────────────────────────────────────────╯
+Failed to discover Ollama models: TypeError: fetch failed
+2026-02-08T03:22:19.427Z Gateway auth is set to token, but no token is configured.
+Set gateway.auth.token (or TALON_GATEWAY_TOKEN), or pass --token.

@@ -1,0 +1,789 @@
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { ImageContent } from "@mariozechner/pi-ai";
+import { streamSimple } from "@mariozechner/pi-ai";
+import { createAgentSession, SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
+import fs from "node:fs/promises";
+import os from "node:os";
+import type { EmbeddedRunAttemptParams, EmbeddedRunAttemptResult } from "./types.js";
+import { getMachineDisplayName } from "../../../infra/machine-name.js";
+import { getGlobalHookRunner } from "../../../plugins/hook-runner-global.js";
+import { isSubagentSessionKey, normalizeAgentId } from "../../../agents/session-key.js";
+import { buildTtsSystemPromptHint } from "../../../tts/tts.js";
+import { resolveUserPath } from "../../../utils.js";
+import { normalizeMessageChannel } from "../../../utils/message-channel.js";
+import { isReasoningTagProvider } from "../../../utils/provider-utils.js";
+import { resolveTalonAgentDir } from "../../agent-paths.js";
+import { resolveSessionAgentIds } from "../../agent-scope.js";
+import { createAnthropicPayloadLogger } from "../../anthropic-payload-log.js";
+import { makeBootstrapWarn, resolveBootstrapContextForRun } from "../../bootstrap-files.js";
+import { createCacheTrace } from "../../cache-trace.js";
+import {
+  listChannelSupportedActions,
+  resolveChannelMessageToolHints,
+} from "../../channel-tools.js";
+import { resolveTalonDocsPath } from "../../docs-path.js";
+import { isTimeoutError } from "../../failover-error.js";
+import { resolveModelAuthMode } from "../../model-auth.js";
+import { resolveDefaultModelForAgent } from "../../model-selection.js";
+import {
+  isCloudCodeAssistFormatError,
+  resolveBootstrapMaxChars,
+  validateAnthropicTurns,
+  validateGeminiTurns,
+} from "../../pi-embedded-helpers.js";
+import { subscribeEmbeddedPiSession } from "../../pi-embedded-subscribe.js";
+import {
+  ensurePiCompactionReserveTokens,
+  resolveCompactionReserveTokensFloor,
+} from "../../pi-settings.js";
+import { toClientToolDefinitions } from "../../pi-tool-definition-adapter.js";
+import { createTalonCodingTools } from "../../pi-tools.js";
+import { resolveSandboxContext } from "../../sandbox.js";
+import { resolveSandboxRuntimeStatus } from "../../sandbox/runtime-status.js";
+import { repairSessionFileIfNeeded } from "../../session-file-repair.js";
+import { guardSessionManager } from "../../session-tool-result-guard-wrapper.js";
+import { acquireSessionWriteLock } from "../../session-write-lock.js";
+import {
+  applySkillEnvOverrides,
+  applySkillEnvOverridesFromSnapshot,
+  loadWorkspaceSkillEntries,
+  resolveSkillsPromptForRun,
+} from "../../skills.js";
+import { buildSystemPromptParams } from "../../system-prompt-params.js";
+import { buildSystemPromptReport } from "../../system-prompt-report.js";
+import { resolveTranscriptPolicy } from "../../transcript-policy.js";
+import { DEFAULT_BOOTSTRAP_FILENAME } from "../../workspace.js";
+import { isAbortError } from "../abort.js";
+import { appendCacheTtlTimestamp, isCacheTtlEligibleProvider } from "../cache-ttl.js";
+import { buildEmbeddedExtensionPaths } from "../extensions.js";
+import { applyExtraParamsToAgent } from "../extra-params.js";
+import {
+  logToolSchemasForGoogle,
+  sanitizeSessionHistory,
+  sanitizeToolsForGoogle,
+} from "../google.js";
+import { getDmHistoryLimitFromSessionKey, limitHistoryTurns } from "../history.js";
+import { log } from "../logger.js";
+import { buildModelAliasLines } from "../model.js";
+import {
+  clearActiveEmbeddedRun,
+  type EmbeddedPiQueueHandle,
+  setActiveEmbeddedRun,
+} from "../runs.js";
+import { buildEmbeddedSandboxInfo } from "../sandbox-info.js";
+import { prewarmSessionFile, trackSessionManagerAccess } from "../session-manager-cache.js";
+import { prepareSessionManagerForRun } from "../session-manager-init.js";
+import {
+  applySystemPromptOverrideToSession,
+  buildEmbeddedSystemPrompt,
+  createSystemPromptOverride,
+} from "../system-prompt.js";
+import { splitSdkTools } from "../tool-split.js";
+import { describeUnknownError, mapThinkingLevel } from "../utils.js";
+import { detectAndLoadPromptImages } from "./images.js";
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB limit for images
+
+export function injectHistoryImagesIntoMessages(
+  messages: AgentMessage[],
+  historyImagesByIndex: Map<number, ImageContent[]>,
+): boolean {
+  if (historyImagesByIndex.size === 0) {
+    return false;
+  }
+  let didMutate = false;
+
+  for (const [msgIndex, images] of historyImagesByIndex) {
+    if (msgIndex < 0 || msgIndex >= messages.length) {
+      continue;
+    }
+    const msg = messages[msgIndex];
+    if (msg && msg.role === "user") {
+      if (typeof msg.content === "string") {
+        msg.content = [{ type: "text", text: msg.content }];
+        didMutate = true;
+      }
+      if (Array.isArray(msg.content)) {
+        const existingImageData = new Set(
+          msg.content
+            .filter(
+              (c): c is ImageContent =>
+                c != null &&
+                typeof c === "object" &&
+                c.type === "image" &&
+                typeof c.data === "string",
+            )
+            .map((c) => c.data),
+        );
+        for (const img of images) {
+          if (!existingImageData.has(img.data)) {
+            msg.content.push(img);
+            didMutate = true;
+          }
+        }
+      }
+    }
+  }
+
+  return didMutate;
+}
+
+export async function runEmbeddedAttempt(
+  params: EmbeddedRunAttemptParams,
+): Promise<EmbeddedRunAttemptResult> {
+  const resolvedWorkspace = resolveUserPath(params.workspaceDir);
+  const prevCwd = process.cwd();
+  const runAbortController = new AbortController();
+
+  log.debug(
+    `embedded run start: runId=${params.runId} sessionId=${params.sessionId} provider=${params.provider} model=${params.modelId} thinking=${params.thinkLevel} messageChannel=${params.messageChannel ?? params.messageProvider ?? "unknown"}`,
+  );
+
+  await fs.mkdir(resolvedWorkspace, { recursive: true });
+
+  const sandboxSessionKey = params.sessionKey?.trim() || params.sessionId;
+  const sandbox = await resolveSandboxContext({
+    config: params.config,
+    sessionKey: sandboxSessionKey,
+    workspaceDir: resolvedWorkspace,
+  });
+  const effectiveWorkspace = sandbox?.enabled
+    ? sandbox.workspaceAccess === "rw"
+      ? resolvedWorkspace
+      : sandbox.workspaceDir
+    : resolvedWorkspace;
+  await fs.mkdir(effectiveWorkspace, { recursive: true });
+
+  let restoreSkillEnv: (() => void) | undefined;
+  process.chdir(effectiveWorkspace);
+  try {
+    const shouldLoadSkillEntries = !params.skillsSnapshot || !params.skillsSnapshot.resolvedSkills;
+    const skillEntries = shouldLoadSkillEntries
+      ? loadWorkspaceSkillEntries(effectiveWorkspace)
+      : [];
+    restoreSkillEnv = params.skillsSnapshot
+      ? applySkillEnvOverridesFromSnapshot({
+        snapshot: params.skillsSnapshot,
+        config: params.config,
+      })
+      : applySkillEnvOverrides({
+        skills: skillEntries ?? [],
+        config: params.config,
+      });
+
+    const skillsPrompt = resolveSkillsPromptForRun({
+      skillsSnapshot: params.skillsSnapshot,
+      entries: shouldLoadSkillEntries ? skillEntries : undefined,
+      config: params.config,
+      workspaceDir: effectiveWorkspace,
+    });
+
+    const sessionLabel = params.sessionKey ?? params.sessionId;
+    const { bootstrapFiles: hookAdjustedBootstrapFiles, contextFiles } =
+      await resolveBootstrapContextForRun({
+        workspaceDir: effectiveWorkspace,
+        config: params.config,
+        sessionKey: params.sessionKey,
+        sessionId: params.sessionId,
+        warn: makeBootstrapWarn({ sessionLabel, warn: (message) => log.warn(message) }),
+      });
+    const workspaceNotes = hookAdjustedBootstrapFiles.some(
+      (file) => file.name === DEFAULT_BOOTSTRAP_FILENAME && !file.missing,
+    )
+      ? ["Reminder: commit your changes in this workspace after edits."]
+      : undefined;
+
+    const agentDir = params.agentDir ?? resolveTalonAgentDir();
+
+    const modelHasVision = params.model.input?.includes("image") ?? false;
+    const toolsRaw = params.disableTools
+      ? []
+      : createTalonCodingTools({
+        exec: {
+          ...params.execOverrides,
+          elevated: params.bashElevated,
+        },
+        sandbox,
+        messageProvider: params.messageChannel ?? params.messageProvider,
+        agentAccountId: params.agentAccountId,
+        messageTo: params.messageTo,
+        messageThreadId: params.messageThreadId,
+        groupId: params.groupId,
+        groupChannel: params.groupChannel,
+        groupSpace: params.groupSpace,
+        spawnedBy: params.spawnedBy,
+        senderId: params.senderId,
+        senderName: params.senderName,
+        senderUsername: params.senderUsername,
+        senderE164: params.senderE164,
+        senderIsOwner: params.senderIsOwner,
+        sessionKey: params.sessionKey ?? params.sessionId,
+        agentDir,
+        workspaceDir: effectiveWorkspace,
+        config: params.config,
+        abortSignal: runAbortController.signal,
+        modelProvider: params.model.provider,
+        modelId: params.modelId,
+        modelAuthMode: resolveModelAuthMode(params.model.provider, params.config),
+        currentChannelId: params.currentChannelId,
+        currentThreadTs: params.currentThreadTs,
+        replyToMode: params.replyToMode,
+        hasRepliedRef: params.hasRepliedRef,
+        modelHasVision,
+        requireExplicitMessageTarget:
+          params.requireExplicitMessageTarget ?? isSubagentSessionKey(params.sessionKey),
+        disableMessageTool: params.disableMessageTool,
+      });
+    const tools = sanitizeToolsForGoogle({ tools: toolsRaw, provider: params.provider });
+    logToolSchemasForGoogle({ tools, provider: params.provider });
+
+    const machineName = await getMachineDisplayName();
+    const runtimeChannel = normalizeMessageChannel(params.messageChannel ?? params.messageProvider);
+
+    // Pruned channel-specific logic
+    const runtimeCapabilities = undefined;
+    const reactionGuidance = undefined;
+
+    const { defaultAgentId, sessionAgentId } = resolveSessionAgentIds({
+      sessionKey: params.sessionKey,
+      config: params.config,
+    });
+    const sandboxInfo = buildEmbeddedSandboxInfo(sandbox, params.bashElevated);
+    const reasoningTagHint = isReasoningTagProvider(params.provider);
+
+    const channelActions = undefined;
+    const messageToolHints = undefined;
+
+    const defaultModelRef = resolveDefaultModelForAgent({
+      cfg: params.config ?? {},
+      agentId: sessionAgentId,
+    });
+    const defaultModelLabel = `${defaultModelRef.provider}/${defaultModelRef.model}`;
+    const { runtimeInfo, userTimezone, userTime, userTimeFormat } = buildSystemPromptParams({
+      config: params.config,
+      agentId: sessionAgentId,
+      workspaceDir: effectiveWorkspace,
+      cwd: process.cwd(),
+      runtime: {
+        host: machineName,
+        os: `${os.type()} ${os.release()}`,
+        arch: os.arch(),
+        node: process.version,
+        model: `${params.provider}/${params.modelId}`,
+        defaultModel: defaultModelLabel,
+        channel: runtimeChannel,
+        capabilities: runtimeCapabilities,
+        channelActions,
+      },
+    });
+    const isDefaultAgent = sessionAgentId === defaultAgentId;
+    const promptMode = isSubagentSessionKey(params.sessionKey) ? "minimal" : "full";
+    const docsPath = await resolveTalonDocsPath({
+      workspaceDir: effectiveWorkspace,
+      argv1: process.argv[1],
+      cwd: process.cwd(),
+      moduleUrl: import.meta.url,
+    });
+    const ttsHint = params.config ? buildTtsSystemPromptHint(params.config) : undefined;
+
+    const appendPrompt = buildEmbeddedSystemPrompt({
+      workspaceDir: effectiveWorkspace,
+      defaultThinkLevel: params.thinkLevel,
+      reasoningLevel: params.reasoningLevel ?? "off",
+      extraSystemPrompt: params.extraSystemPrompt,
+      ownerNumbers: params.ownerNumbers,
+      reasoningTagHint,
+      heartbeatPrompt: isDefaultAgent ? "HEARTBEAT_POLL" : undefined,
+      skillsPrompt,
+      docsPath: docsPath ?? undefined,
+      ttsHint,
+      workspaceNotes,
+      reactionGuidance,
+      promptMode,
+      runtimeInfo,
+      messageToolHints,
+      sandboxInfo,
+      tools,
+      modelAliasLines: buildModelAliasLines(params.config),
+      userTimezone,
+      userTime,
+      userTimeFormat,
+      contextFiles,
+      memoryCitationsMode: params.config?.memory?.citations,
+    });
+    const systemPromptReport = buildSystemPromptReport({
+      source: "run",
+      generatedAt: Date.now(),
+      sessionId: params.sessionId,
+      sessionKey: params.sessionKey,
+      provider: params.provider,
+      model: params.modelId,
+      workspaceDir: effectiveWorkspace,
+      bootstrapMaxChars: resolveBootstrapMaxChars(params.config),
+      sandbox: (() => {
+        const runtime = resolveSandboxRuntimeStatus({
+          cfg: params.config,
+          sessionKey: params.sessionKey ?? params.sessionId,
+        });
+        return { mode: runtime.mode, sandboxed: runtime.sandboxed };
+      })(),
+      systemPrompt: appendPrompt,
+      bootstrapFiles: hookAdjustedBootstrapFiles,
+      injectedFiles: contextFiles,
+      skillsPrompt,
+      tools,
+    });
+    const systemPromptOverride = createSystemPromptOverride(appendPrompt);
+    const systemPromptText = systemPromptOverride();
+
+    const sessionLock = await acquireSessionWriteLock({
+      sessionFile: params.sessionFile,
+    });
+
+    let sessionManager: ReturnType<typeof guardSessionManager> | undefined;
+    let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
+    try {
+      await repairSessionFileIfNeeded({
+        sessionFile: params.sessionFile,
+        warn: (message) => log.warn(message),
+      });
+      const hadSessionFile = await fs
+        .stat(params.sessionFile)
+        .then(() => true)
+        .catch(() => false);
+
+      const transcriptPolicy = resolveTranscriptPolicy({
+        modelApi: params.model?.api,
+        provider: params.provider,
+        modelId: params.modelId,
+      });
+
+      await prewarmSessionFile(params.sessionFile);
+      sessionManager = guardSessionManager(SessionManager.open(params.sessionFile), {
+        agentId: sessionAgentId,
+        sessionKey: params.sessionKey,
+        allowSyntheticToolResults: transcriptPolicy.allowSyntheticToolResults,
+      });
+      trackSessionManagerAccess(params.sessionFile);
+
+      await prepareSessionManagerForRun({
+        sessionManager,
+        sessionFile: params.sessionFile,
+        hadSessionFile,
+        sessionId: params.sessionId,
+        cwd: effectiveWorkspace,
+      });
+
+      const settingsManager = SettingsManager.create(effectiveWorkspace, agentDir);
+      ensurePiCompactionReserveTokens({
+        settingsManager,
+        minReserveTokens: resolveCompactionReserveTokensFloor(params.config),
+      });
+
+      buildEmbeddedExtensionPaths({
+        cfg: params.config,
+        sessionManager,
+        provider: params.provider,
+        modelId: params.modelId,
+        model: params.model,
+      });
+
+      const { builtInTools, customTools } = splitSdkTools({
+        tools,
+        sandboxEnabled: !!sandbox?.enabled,
+      });
+
+      let clientToolCallDetected: { name: string; params: Record<string, unknown> } | null = null;
+      const clientToolDefs = params.clientTools
+        ? toClientToolDefinitions(
+          params.clientTools,
+          (toolName, toolParams) => {
+            clientToolCallDetected = { name: toolName, params: toolParams };
+          },
+          {
+            agentId: sessionAgentId,
+            sessionKey: params.sessionKey,
+          },
+        )
+        : [];
+
+      const allCustomTools = [...customTools, ...clientToolDefs];
+
+      ({ session } = await createAgentSession({
+        cwd: resolvedWorkspace,
+        agentDir,
+        authStorage: params.authStorage,
+        modelRegistry: params.modelRegistry,
+        model: params.model,
+        thinkingLevel: mapThinkingLevel(params.thinkLevel),
+        tools: builtInTools,
+        customTools: allCustomTools,
+        sessionManager,
+        settingsManager,
+      }));
+      applySystemPromptOverrideToSession(session, systemPromptText);
+      if (!session) {
+        throw new Error("Embedded agent session missing");
+      }
+      const activeSession = session;
+      const cacheTrace = createCacheTrace({
+        cfg: params.config,
+        env: process.env,
+        runId: params.runId,
+        sessionId: activeSession.sessionId,
+        sessionKey: params.sessionKey,
+        provider: params.provider,
+        modelId: params.modelId,
+        modelApi: params.model.api,
+        workspaceDir: params.workspaceDir,
+      });
+      const anthropicPayloadLogger = createAnthropicPayloadLogger({
+        env: process.env,
+        runId: params.runId,
+        sessionId: activeSession.sessionId,
+        sessionKey: params.sessionKey,
+        provider: params.provider,
+        modelId: params.modelId,
+        modelApi: params.model.api,
+        workspaceDir: params.workspaceDir,
+      });
+
+      activeSession.agent.streamFn = streamSimple;
+
+      applyExtraParamsToAgent(
+        activeSession.agent,
+        params.config,
+        params.provider,
+        params.modelId,
+        params.streamParams,
+      );
+
+      if (cacheTrace) {
+        cacheTrace.recordStage("session:loaded", {
+          messages: activeSession.messages,
+          system: systemPromptText,
+          note: "after session create",
+        });
+        activeSession.agent.streamFn = cacheTrace.wrapStreamFn(activeSession.agent.streamFn);
+      }
+      if (anthropicPayloadLogger) {
+        activeSession.agent.streamFn = anthropicPayloadLogger.wrapStreamFn(
+          activeSession.agent.streamFn,
+        );
+      }
+
+      try {
+        const prior = await sanitizeSessionHistory({
+          messages: activeSession.messages,
+          modelApi: params.model.api,
+          modelId: params.modelId,
+          provider: params.provider,
+          sessionManager,
+          sessionId: params.sessionId,
+          policy: transcriptPolicy,
+        });
+        cacheTrace?.recordStage("session:sanitized", { messages: prior });
+        const validatedGemini = transcriptPolicy.validateGeminiTurns
+          ? validateGeminiTurns(prior)
+          : prior;
+        const validated = transcriptPolicy.validateAnthropicTurns
+          ? validateAnthropicTurns(validatedGemini)
+          : validatedGemini;
+        const limited = limitHistoryTurns(
+          validated,
+          getDmHistoryLimitFromSessionKey(params.sessionKey, params.config),
+        );
+        cacheTrace?.recordStage("session:limited", { messages: limited });
+        if (limited.length > 0) {
+          activeSession.agent.replaceMessages(limited);
+        }
+      } catch (err) {
+        sessionManager.flushPendingToolResults?.();
+        activeSession.dispose();
+        throw err;
+      }
+
+      let aborted = Boolean(params.abortSignal?.aborted);
+      let timedOut = false;
+      const getAbortReason = (signal: AbortSignal): unknown =>
+        "reason" in signal ? (signal as { reason?: unknown }).reason : undefined;
+      const makeTimeoutAbortReason = (): Error => {
+        const err = new Error("request timed out");
+        err.name = "TimeoutError";
+        return err;
+      };
+      const makeAbortError = (signal: AbortSignal): Error => {
+        const reason = getAbortReason(signal);
+        const err = reason ? new Error("aborted", { cause: reason }) : new Error("aborted");
+        err.name = "AbortError";
+        return err;
+      };
+      const abortRun = (isTimeout = false, reason?: unknown) => {
+        aborted = true;
+        if (isTimeout) {
+          timedOut = true;
+        }
+        if (isTimeout) {
+          runAbortController.abort(reason ?? makeTimeoutAbortReason());
+        } else {
+          runAbortController.abort(reason);
+        }
+        void activeSession.abort();
+      };
+      const abortable = <T>(promise: Promise<T>): Promise<T> => {
+        const signal = runAbortController.signal;
+        if (signal.aborted) {
+          return Promise.reject(makeAbortError(signal));
+        }
+        return new Promise<T>((resolve, reject) => {
+          const onAbort = () => {
+            signal.removeEventListener("abort", onAbort);
+            reject(makeAbortError(signal));
+          };
+          signal.addEventListener("abort", onAbort, { once: true });
+          promise.then(
+            (value) => {
+              signal.removeEventListener("abort", onAbort);
+              resolve(value);
+            },
+            (err) => {
+              signal.removeEventListener("abort", onAbort);
+              reject(err);
+            },
+          );
+        });
+      };
+
+      const subscription = subscribeEmbeddedPiSession({
+        session: activeSession,
+        runId: params.runId,
+        verboseLevel: params.verboseLevel,
+        reasoningMode: params.reasoningLevel ?? "off",
+        toolResultFormat: params.toolResultFormat,
+        shouldEmitToolResult: params.shouldEmitToolResult,
+        shouldEmitToolOutput: params.shouldEmitToolOutput,
+        onToolResult: params.onToolResult,
+        onReasoningStream: params.onReasoningStream,
+        onBlockReply: params.onBlockReply,
+        onBlockReplyFlush: params.onBlockReplyFlush,
+        blockReplyBreak: params.blockReplyBreak,
+        blockReplyChunking: params.blockReplyChunking,
+        onPartialReply: params.onPartialReply,
+        onAssistantMessageStart: params.onAssistantMessageStart,
+        onAgentEvent: params.onAgentEvent,
+        enforceFinalTag: params.enforceFinalTag,
+      });
+
+      const {
+        assistantTexts,
+        toolMetas,
+        unsubscribe,
+        waitForCompactionRetry,
+        getMessagingToolSentTexts,
+        getMessagingToolSentTargets,
+        didSendViaMessagingTool,
+        getLastToolError,
+      } = subscription;
+
+      const queueHandle: EmbeddedPiQueueHandle = {
+        queueMessage: async (text: string) => {
+          await activeSession.steer(text);
+        },
+        isStreaming: () => activeSession.isStreaming,
+        isCompacting: () => subscription.isCompacting(),
+        abort: abortRun,
+      };
+      setActiveEmbeddedRun(params.sessionId, queueHandle);
+
+      let abortWarnTimer: NodeJS.Timeout | undefined;
+      const isProbeSession = params.sessionId?.startsWith("probe-") ?? false;
+      const abortTimer = setTimeout(
+        () => {
+          if (!isProbeSession) {
+            log.warn(
+              `embedded run timeout: runId=${params.runId} sessionId=${params.sessionId} timeoutMs=${params.timeoutMs}`,
+            );
+          }
+          abortRun(true);
+          if (!abortWarnTimer) {
+            abortWarnTimer = setTimeout(() => {
+              if (!activeSession.isStreaming) {
+                return;
+              }
+              if (!isProbeSession) {
+                log.warn(
+                  `embedded run abort still streaming: runId=${params.runId} sessionId=${params.sessionId}`,
+                );
+              }
+            }, 10_000);
+          }
+        },
+        Math.max(1, params.timeoutMs),
+      );
+
+      let messagesSnapshot: AgentMessage[] = [];
+      let sessionIdUsed = activeSession.sessionId;
+      const onAbort = () => {
+        const reason = params.abortSignal ? getAbortReason(params.abortSignal) : undefined;
+        const timeout = reason ? isTimeoutError(reason) : false;
+        abortRun(timeout, reason);
+      };
+      if (params.abortSignal) {
+        if (params.abortSignal.aborted) {
+          onAbort();
+        } else {
+          params.abortSignal.addEventListener("abort", onAbort, {
+            once: true,
+          });
+        }
+      }
+
+      const hookRunner = getGlobalHookRunner();
+      const hookAgentId =
+        typeof params.agentId === "string" && params.agentId.trim()
+          ? normalizeAgentId(params.agentId)
+          : resolveSessionAgentIds({
+            sessionKey: params.sessionKey,
+            config: params.config,
+          }).sessionAgentId;
+
+      let promptError: unknown = null;
+      try {
+        const promptStartedAt = Date.now();
+
+        let effectivePrompt = params.prompt;
+        if (hookRunner?.hasHooks("before_agent_start")) {
+          try {
+            const hookResult = await hookRunner.runBeforeAgentStart(
+              {
+                prompt: params.prompt,
+                messages: activeSession.messages,
+              },
+              {
+                agentId: hookAgentId,
+                sessionKey: params.sessionKey,
+                workspaceDir: params.workspaceDir,
+                messageProvider: params.messageProvider ?? undefined,
+              },
+            );
+            if (hookResult?.prependContext) {
+              effectivePrompt = `${hookResult.prependContext}\n\n${params.prompt}`;
+              log.debug(
+                `hooks: prepended context to prompt (${hookResult.prependContext.length} chars)`,
+              );
+            }
+          } catch (hookErr) {
+            log.warn(`before_agent_start hook failed: ${String(hookErr)}`);
+          }
+        }
+
+        log.debug(`embedded run prompt start: runId=${params.runId} sessionId=${params.sessionId}`);
+        cacheTrace?.recordStage("prompt:before", {
+          prompt: effectivePrompt,
+          messages: activeSession.messages,
+        });
+
+        const leafEntry = sessionManager.getLeafEntry();
+        if (leafEntry?.type === "message" && leafEntry.message.role === "user") {
+          if (leafEntry.parentId) {
+            sessionManager.branch(leafEntry.parentId);
+          } else {
+            sessionManager.resetLeaf();
+          }
+          const sessionContext = sessionManager.buildSessionContext();
+          activeSession.agent.replaceMessages(sessionContext.messages);
+          log.warn(
+            `Removed orphaned user message to prevent consecutive user turns. ` +
+            `runId=${params.runId} sessionId=${params.sessionId}`,
+          );
+        }
+
+        try {
+          const imageResult = await detectAndLoadPromptImages({
+            prompt: effectivePrompt,
+            workspaceDir: effectiveWorkspace,
+            model: params.model,
+            existingImages: params.images,
+            historyMessages: activeSession.messages,
+            maxBytes: MAX_IMAGE_BYTES,
+            sandboxRoot: sandbox?.enabled ? sandbox.workspaceDir : undefined,
+          });
+
+          const didMutate = injectHistoryImagesIntoMessages(
+            activeSession.messages,
+            imageResult.historyImagesByIndex,
+          );
+          if (didMutate) {
+            activeSession.agent.replaceMessages(activeSession.messages);
+          }
+
+          cacheTrace?.recordStage("prompt:images", {
+            prompt: effectivePrompt,
+            messages: activeSession.messages,
+            note: `images: prompt=${imageResult.images.length} history=${imageResult.historyImagesByIndex.size}`,
+          });
+
+          try {
+            await activeSession.prompt(effectivePrompt, {
+              images: imageResult.images,
+            });
+          } catch (err) {
+            promptError = err;
+            throw err;
+          } finally {
+            clearActiveEmbeddedRun(params.sessionId, queueHandle);
+            clearTimeout(abortTimer);
+            if (abortWarnTimer) clearTimeout(abortWarnTimer);
+            unsubscribe();
+            if (params.abortSignal) {
+              params.abortSignal.removeEventListener("abort", onAbort);
+            }
+          }
+
+          const lastAssistant = activeSession.messages
+            .slice()
+            .reverse()
+            .find((m) => m.role === "assistant") as any;
+
+          return {
+            aborted,
+            timedOut,
+            promptError,
+            sessionIdUsed: activeSession.sessionId,
+            systemPromptReport,
+            messagesSnapshot: [...activeSession.messages],
+            assistantTexts,
+            toolMetas: toolMetas.filter((m): m is { toolName: string; meta?: string } => !!m.toolName),
+            lastAssistant,
+            lastToolError: getLastToolError(),
+            didSendViaMessagingTool: didSendViaMessagingTool(),
+            messagingToolSentTexts: getMessagingToolSentTexts(),
+            messagingToolSentTargets: getMessagingToolSentTargets(),
+            cloudCodeAssistFormatError: isCloudCodeAssistFormatError(String(promptError || "")),
+          };
+
+        } catch (err) {
+          throw err;
+        }
+      } catch (err) {
+        promptError = err;
+        throw err;
+      } finally {
+        clearActiveEmbeddedRun(params.sessionId, queueHandle);
+        clearTimeout(abortTimer);
+        if (abortWarnTimer) clearTimeout(abortWarnTimer);
+        unsubscribe();
+
+        // ... cleanup logic
+      }
+    } finally {
+      await sessionLock.release();
+    }
+  } catch (err) {
+    // ... error handling
+    throw err;
+  } finally {
+    restoreSkillEnv?.();
+    process.chdir(prevCwd);
+  }
+}

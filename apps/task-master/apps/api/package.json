@@ -1,0 +1,37 @@
+{
+  "name": "@task/api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:unit": "node --test test/validate.test.js test/talon.test.js test/routingRules.test.js test/taskMoves.test.js test/contextQueue.test.js test/contextIndexWorker.test.js test/contextSync.test.js",
+    "test:integration": "node --test test/api.test.js",
+    "test:all": "node --test test/*.test.js",
+    "test:watch": "node --test --watch test/*.test.js",
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "build": "echo 'no build step'",
+    "db:setup": "prisma db push && node prisma/seed.js",
+    "db:studio": "prisma studio",
+    "db:seed": "node prisma/seed.js",
+    "lint": "echo 'no lint yet'"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "private": "true",
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "nanoid": "^5.1.6",
+    "zod": "^4.3.6",
+    "nodemailer": "^6.9.13",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "prisma": "^5.22.0"
+  }
+}

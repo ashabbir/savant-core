@@ -1,0 +1,181 @@
+{
+  "name": "talon",
+  "version": "2026.2.7",
+  "description": "Lightweight AI agent orchestration platform",
+  "keywords": [],
+  "license": "MIT",
+  "author": "",
+  "bin": {
+    "talon": "talon.mjs"
+  },
+  "files": [
+    "assets/",
+    "CHANGELOG.md",
+    "dist/",
+    "docs/",
+    "extensions/",
+    "LICENSE",
+    "talon.mjs",
+    "README-header.png",
+    "README.md",
+    "skills/"
+  ],
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./plugin-sdk": "./dist/plugin-sdk/index.js",
+    "./cli-entry": "./talon.mjs"
+  },
+  "scripts": {
+    "build": "npm run canvas:a2ui:bundle && tsdown && npm run build:plugin-sdk:dts && node --import tsx scripts/write-plugin-sdk-entry-dts.ts && node --import tsx scripts/canvas-a2ui-copy.ts && node --import tsx scripts/copy-hook-metadata.ts && node --import tsx scripts/write-build-info.ts && node --import tsx scripts/write-cli-compat.ts",
+    "build:plugin-sdk:dts": "tsc -p tsconfig.plugin-sdk.dts.json",
+    "canvas:a2ui:bundle": "bash scripts/bundle-a2ui.sh",
+    "check": "npm run tsgo && npm run lint && npm run format",
+    "check:docs": "npm run format:docs && npm run lint:docs && npm run docs:build",
+    "check:loc": "node --import tsx scripts/check-ts-max-loc.ts --max 500",
+    "dev": "node scripts/run-node.mjs",
+    "docs:bin": "node scripts/build-docs-list.mjs",
+    "docs:build": "cd docs && npm exec mint broken-links",
+    "docs:dev": "cd docs && mint dev",
+    "docs:list": "node scripts/docs-list.js",
+    "format": "oxfmt --check",
+    "format:all": "npm run format",
+    "format:docs": "git ls-files 'docs/**/*.md' 'docs/**/*.mdx' 'README.md' | xargs oxfmt --check",
+    "format:docs:fix": "git ls-files 'docs/**/*.md' 'docs/**/*.mdx' 'README.md' | xargs oxfmt --write",
+    "format:fix": "oxfmt --write",
+    "gateway:dev": "TALON_SKIP_CHANNELS=1 node scripts/run-node.mjs --dev gateway",
+    "gateway:dev:reset": "TALON_SKIP_CHANNELS=1 node scripts/run-node.mjs --dev gateway --reset",
+    "gateway:watch": "node scripts/watch-node.mjs gateway --force",
+    "lint": "oxlint --type-aware",
+    "lint:all": "npm run lint",
+    "lint:docs": "npm exec markdownlint-cli2",
+    "lint:docs:fix": "npm exec markdownlint-cli2 --fix",
+    "lint:fix": "oxlint --type-aware --fix && npm run format:fix",
+    "talon": "node scripts/run-node.mjs",
+    "talon:rpc": "node scripts/run-node.mjs agent --mode rpc --json",
+    "plugins:sync": "node --import tsx scripts/sync-plugin-versions.ts",
+    "prepack": "npm run build",
+    "prepare": "command -v git >/dev/null 2>&1 && git config core.hooksPath git-hooks || exit 0",
+    "protocol:check": "npm run protocol:gen && npm run protocol:gen:swift && git diff --exit-code -- dist/protocol.schema.json",
+    "protocol:gen": "node --import tsx scripts/protocol-gen.ts",
+    "protocol:gen:swift": "node --import tsx scripts/protocol-gen-swift.ts",
+    "release:check": "node --import tsx scripts/release-check.ts",
+    "start": "node scripts/run-node.mjs",
+    "test": "node scripts/test-parallel.mjs",
+    "test:all": "npm run lint && npm run build && npm run test && npm run test:e2e && npm run test:live",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:force": "node --import tsx scripts/test-force.ts",
+    "test:live": "TALON_LIVE_TEST=1 vitest run --config vitest.live.config.ts",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "0.14.1",
+    "@aws-sdk/client-bedrock": "^3.985.0",
+    "@clack/prompts": "^1.0.0",
+    "@lydell/node-pty": "1.2.0-beta.3",
+    "@mariozechner/pi-agent-core": "0.52.7",
+    "@mariozechner/pi-ai": "0.52.7",
+    "@mariozechner/pi-coding-agent": "0.52.7",
+    "@mariozechner/pi-tui": "0.52.7",
+    "ajv": "^8.17.1",
+    "chalk": "^5.6.2",
+    "chokidar": "^5.0.0",
+    "cli-highlight": "^2.1.11",
+    "commander": "^14.0.3",
+    "croner": "^10.0.1",
+    "dotenv": "^17.2.4",
+    "express": "^5.2.1",
+    "long": "^5.3.2",
+    "markdown-it": "^14.1.0",
+    "osc-progress": "^0.3.0",
+    "proper-lockfile": "^4.1.2",
+    "sqlite-vec": "0.1.7-alpha.2",
+    "tslog": "^4.10.2",
+    "undici": "^7.21.0",
+    "ws": "^8.19.0",
+    "yaml": "^2.8.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^25.2.1",
+    "@types/proper-lockfile": "^4.1.4",
+    "@types/ws": "^8.11.0",
+    "ollama": "^0.6.3",
+    "oxfmt": "0.28.0",
+    "oxlint": "^1.43.0",
+    "oxlint-tsgolint": "^0.11.4",
+    "rolldown": "1.0.0-rc.3",
+    "tsdown": "^0.20.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "peerDependencies": {
+    "@napi-rs/canvas": "^0.1.89",
+    "node-llama-cpp": "3.15.1"
+  },
+  "overrides": {
+    "tar": "7.5.7"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@10.23.0",
+  "pnpm": {
+    "overrides": {
+      "fast-xml-parser": "5.3.4",
+      "form-data": "2.5.4",
+      "@hono/node-server>hono": "4.11.8",
+      "hono": "4.11.8",
+      "qs": "6.14.1",
+      "@sinclair/typebox": "0.34.48",
+      "tar": "7.5.7",
+      "tough-cookie": "4.1.3"
+    },
+    "onlyBuiltDependencies": [
+      "@lydell/node-pty",
+      "@matrix-rs/matrix-sdk-crypto-nodejs",
+      "@napi-rs/canvas",
+      "authenticate-pam",
+      "esbuild",
+      "node-llama-cpp",
+      "protobufjs"
+    ]
+  },
+  "vitest": {
+    "coverage": {
+      "provider": "v8",
+      "reporter": [
+        "text",
+        "lcov"
+      ],
+      "thresholds": {
+        "lines": 70,
+        "functions": 70,
+        "branches": 70,
+        "statements": 70
+      },
+      "include": [
+        "src/**/*.ts"
+      ],
+      "exclude": [
+        "src/**/*.test.ts"
+      ]
+    },
+    "include": [
+      "src/**/*.test.ts"
+    ],
+    "exclude": [
+      "dist/**",
+      "apps/macos/**",
+      "apps/macos/.build/**",
+      "**/vendor/**",
+      "apps/macos/.build/**",
+      "dist/Talon.app/**"
+    ]
+  }
+}

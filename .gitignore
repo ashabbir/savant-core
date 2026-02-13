@@ -1,0 +1,29 @@
+# Node
+node_modules/
+.codex
+apps/talon/.talon-dev/
+
+# Env
+.env
+.env.*
+
+# OS
+.DS_Store
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Vite
+apps/task-master/apps/web/dist/
+
+# Prisma
+apps/task-master/apps/api/prisma/dev.db
+apps/task-master/apps/api/prisma/prisma/
+
+# Docker
+*.pid
+
+# MCP gateway runtime data
+apps/mcp-gateway/data/

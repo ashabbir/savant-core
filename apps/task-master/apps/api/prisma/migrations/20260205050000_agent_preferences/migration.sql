@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN "preferredAgentId" TEXT;
+
+-- AlterTable
+ALTER TABLE "Agent" ADD COLUMN "model" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "Agent" ADD COLUMN "soul" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "Agent" ADD COLUMN "guardrails" TEXT NOT NULL DEFAULT '';

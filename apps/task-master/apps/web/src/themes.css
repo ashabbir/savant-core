@@ -1,0 +1,74 @@
+/* apps/web/src/themes.css */
+
+/* Default (Dark Mode) Theme */
+:root {
+  --background-primary: #040506;
+  --background-secondary: #0e0e10;
+  --background-tertiary: #161618;
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-tertiary: rgba(255, 255, 255, 0.5);
+  --border-primary: rgba(255, 255, 255, 0.1);
+  --border-secondary: rgba(255, 255, 255, 0.06);
+  --border-tertiary: rgba(148, 163, 184, 0.15);
+  --border-dashed: rgba(148, 163, 184, 0.15);
+  --border-input: rgba(148, 163, 184, 0.2);
+  --accent-primary: #ff6d5a;
+  --accent-secondary: #06b6d4;
+  --accent-tertiary: #8b5cf6;
+  --accent-bg: rgba(59, 130, 246, 0.25);
+  --card-background: rgba(14, 14, 16, 0.6);
+  --modal-background: rgba(14, 14, 16, 0.9);
+  --modal-border: rgba(148, 163, 184, 0.2);
+  --button-primary-bg: var(--accent-primary);
+  --button-secondary-bg: transparent;
+  --button-secondary-border: var(--border-primary);
+  --table-border: rgba(148, 163, 184, 0.15);
+  --table-header-text: rgba(226, 232, 240, 0.9);
+  --table-empty-text: rgba(226, 232, 240, 0.6);
+  --filter-hover-bg: rgba(255, 255, 255, 0.05);
+  --hover-bg: rgba(255, 255, 255, 0.03);
+}
+
+/* Light Mode Theme */
+.light-mode {
+  --background-primary: #e8f1f8;
+  /* Soft blue-gray */
+  --background-secondary: #f0f7fc;
+  /* Very light blue */
+  --background-tertiary: #e0edf7;
+  /* Light blue for subtle contrast */
+  --text-primary: #1a1a1a;
+  /* Softer black, easier on eyes */
+  --text-secondary: rgba(26, 26, 26, 0.75);
+  /* Darker for better contrast */
+  --text-tertiary: rgba(26, 26, 26, 0.55);
+  /* Medium gray for hints */
+  --border-primary: rgba(59, 130, 246, 0.15);
+  /* Light blue borders */
+  --border-secondary: rgba(59, 130, 246, 0.08);
+  --border-tertiary: rgba(59, 130, 246, 0.2);
+  --border-dashed: rgba(59, 130, 246, 0.25);
+  --border-input: rgba(59, 130, 246, 0.3);
+  --accent-primary: #ff6d5a;
+  --accent-secondary: #0891b2;
+  /* Slightly darker cyan for better contrast */
+  --accent-tertiary: #7c3aed;
+  /* Slightly darker purple */
+  --accent-bg: rgba(59, 130, 246, 0.12);
+  /* Softer accent background */
+  --card-background: #f8fbfd;
+  /* Very light blue-white for cards */
+  --modal-background: rgba(248, 251, 253, 0.98);
+  /* Nearly opaque light blue */
+  --modal-border: rgba(59, 130, 246, 0.2);
+  /* Blue modal border */
+  --button-primary-bg: var(--accent-primary);
+  --button-secondary-bg: transparent;
+  --button-secondary-border: var(--border-primary);
+  --table-border: rgba(59, 130, 246, 0.2);
+  --table-header-text: rgba(26, 26, 26, 0.85);
+  --table-empty-text: rgba(26, 26, 26, 0.5);
+  --filter-hover-bg: rgba(59, 130, 246, 0.08);
+  --hover-bg: rgba(59, 130, 246, 0.05);
+}

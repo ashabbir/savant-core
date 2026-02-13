@@ -1,0 +1,27 @@
+:root {
+  --bg-brand-black: var(--background-primary);
+  --bg-surface-zinc: var(--background-secondary);
+  --bg-surface-elevated: var(--background-tertiary);
+
+  --accent-orange: var(--accent-primary);
+  --accent-cyan: var(--accent-secondary);
+  --accent-purple: var(--accent-tertiary);
+
+  --status-success: #00c875;
+  --status-warning: #ffcb00;
+  --status-error: #f22d46;
+
+  --border: var(--border-secondary);
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-node: 4px;
+  --radius-container: 6px;
+}
+
+body {
+  background: var(--background-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
