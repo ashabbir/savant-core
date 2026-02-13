@@ -39,7 +39,6 @@ model NotificationSubscription {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
-  @@index([projectId])
 }
 
 type ProjectColumn {
@@ -91,7 +90,6 @@ model ProjectAnalysis {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   files   ProjectAnalysisFile[]
 
-  @@index([projectId])
 }
 
 model ProjectAnalysisFile {
