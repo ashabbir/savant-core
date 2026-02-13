@@ -3020,6 +3020,10 @@ button.success:hover {
   white-space: pre-wrap;
 }
 
+.jarvisContentMarkdown {
+  white-space: normal;
+}
+
 .user .jarvisContent {
   background: rgba(59, 130, 246, 0.2);
   border-color: rgba(59, 130, 246, 0.45);

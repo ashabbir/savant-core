@@ -1,6 +1,109 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { apiPost, apiGet, apiDelete } from '../api';
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderInlineMarkdown(value) {
+  let out = value;
+  out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  return out;
+}
+
+function renderMarkdownTextBlock(text) {
+  const lines = String(text || '').split('\n');
+  const html = [];
+  let inList = false;
+
+  const closeList = () => {
+    if (inList) {
+      html.push('</ul>');
+      inList = false;
+    }
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+    if (!trimmed) {
+      closeList();
+      continue;
+    }
+
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      closeList();
+      const level = headingMatch[1].length;
+      html.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`);
+      continue;
+    }
+
+    const listMatch = trimmed.match(/^[-*]\s+(.*)$/);
+    if (listMatch) {
+      if (!inList) {
+        html.push('<ul>');
+        inList = true;
+      }
+      html.push(`<li>${renderInlineMarkdown(listMatch[1])}</li>`);
+      continue;
+    }
+
+    closeList();
+    html.push(`<p>${renderInlineMarkdown(trimmed)}</p>`);
+  }
+
+  closeList();
+  return html.join('');
+}
+
+function markdownToHtml(markdown) {
+  const source = String(markdown || '');
+  const safe = escapeHtml(source);
+  const codeBlockRegex = /```([a-zA-Z0-9_-]+)?\n([\s\S]*?)```/g;
+  let result = '';
+  let cursor = 0;
+  let match = codeBlockRegex.exec(safe);
+
+  while (match) {
+    const before = safe.slice(cursor, match.index);
+    if (before.trim()) {
+      result += renderMarkdownTextBlock(before);
+    }
+    const language = (match[1] || '').trim();
+    const code = match[2] || '';
+    const className = language ? ` class="language-${language}"` : '';
+    result += `<pre><code${className}>${code}</code></pre>`;
+    cursor = match.index + match[0].length;
+    match = codeBlockRegex.exec(safe);
+  }
+
+  const trailing = safe.slice(cursor);
+  if (trailing.trim()) {
+    result += renderMarkdownTextBlock(trailing);
+  }
+  return result;
+}
+
+function shouldRenderMarkdown(text) {
+  const value = String(text || '');
+  return (
+    value.includes('```')
+    || /^#{1,6}\s/m.test(value)
+    || /^[-*]\s+/m.test(value)
+    || /\[[^\]]+\]\(https?:\/\/[^\s)]+\)/.test(value)
+    || /`[^`]+`/.test(value)
+  );
+}
+
 function CommandBar({ inFooter = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState('');
@@ -377,7 +480,16 @@ function CommandBar({ inFooter = false }) {
             {history.map((msg, i) => (
               <div key={i} className={`jarvisMsg ${msg.role}`}>
                 <div className="jarvisRole">{msg.role === 'jarvis' ? 'Jarvis' : msg.role === 'user' ? 'You' : 'Error'}</div>
-                <div className="jarvisContent">{msg.content}</div>
+                <div className={`jarvisContent ${msg.role === 'jarvis' && shouldRenderMarkdown(msg.content) ? 'jarvisContentMarkdown' : ''}`}>
+                  {msg.role === 'jarvis' && shouldRenderMarkdown(msg.content) ? (
+                    <div
+                      className="markdownViewer"
+                      dangerouslySetInnerHTML={{ __html: markdownToHtml(msg.content) }}
+                    />
+                  ) : (
+                    msg.content
+                  )}
+                </div>
                 {msg.model && <div className="jarvisMeta">{msg.model}</div>}
               </div>
             ))}
