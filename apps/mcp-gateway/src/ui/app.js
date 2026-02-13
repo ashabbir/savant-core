@@ -5,7 +5,8 @@ function $(id) {
 const state = {
   mcps: [],
   selectedMcpId: '',
-  tools: []
+  tools: [],
+  repos: []
 };
 
 const tokenInput = $('tokenInput');
@@ -16,8 +17,8 @@ const mcpEmptyEl = $('mcpEmpty');
 const selectedMcpTitleEl = $('selectedMcpTitle');
 const dashboardSummaryEl = $('dashboardSummary');
 const dashboardAuditRowsEl = $('dashboardAuditRows');
+const dashboardRepoRowsEl = $('dashboardRepoRows');
 const dashboardMsgEl = $('dashboardMsg');
-const deleteMcpBtn = $('deleteMcpBtn');
 
 const repoIdInput = $('repoIdInput');
 const repoNameInput = $('repoNameInput');
@@ -30,6 +31,7 @@ const toolSelectEl = $('toolSelect');
 const toolArgsInputEl = $('toolArgsInput');
 const runMsgEl = $('runMsg');
 const runResultEl = $('runResult');
+
 const connectBaseUrlEl = $('connectBaseUrl');
 const connectMcpIdEl = $('connectMcpId');
 const connectCmdListEl = $('connectCmdList');
@@ -63,7 +65,8 @@ function setMsg(el, text, isError = false) {
 
 function renderConnectInstructions() {
   const baseUrl = window.location.origin || 'http://localhost:4444';
-  const mcpId = state.selectedMcpId || '<mcp_id>';
+  const mcpId = state.selectedMcpId || 'context';
+  const repoName = state.repos[0]?.repo_name || '<repo_name>';
   const token = String(tokenInput.value || '').trim();
   const authSegment = token ? ` -H 'Authorization: Bearer ${token}'` : '';
 
@@ -74,11 +77,11 @@ function renderConnectInstructions() {
   connectCmdSearchEl.textContent =
 `curl -s${authSegment} -H 'Content-Type: application/json' \\
   -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/memory_search/run' \\
-  -d '{"arguments":{"query":"auth flow","limit":5}}'`;
+  -d '{"arguments":{"repo":"${repoName}","query":"auth flow","limit":5}}'`;
   connectCmdReadEl.textContent =
 `curl -s${authSegment} -H 'Content-Type: application/json' \\
   -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/memory_read/run' \\
-  -d '{"arguments":{"path":"memory_bank/README.md"}}'`;
+  -d '{"arguments":{"repo":"${repoName}","path":"memory_bank/README.md"}}'`;
 }
 
 async function fetchJson(url, options = {}) {
@@ -113,7 +116,7 @@ function renderMcpList() {
     button.setAttribute('data-mcp-id', mcp.mcp_id);
     button.innerHTML = `
       <div class="mcpItemName">${mcp.mcp_name}</div>
-      <div class="mcpItemMeta">files=${Number(mcp.files_indexed || 0)} chunks=${Number(mcp.chunks_indexed || 0)}</div>
+      <div class="mcpItemMeta">repos=${Number(mcp.repo_count || 0)} files=${Number(mcp.files_indexed || 0)} chunks=${Number(mcp.chunks_indexed || 0)}</div>
       <div class="mcpItemMeta">${formatTime(mcp.indexed_at)}</div>
     `;
     mcpListEl.appendChild(button);
@@ -124,13 +127,12 @@ function renderDashboard(data) {
   dashboardSummaryEl.innerHTML = '';
   const metrics = [
     { label: 'MCP', value: data.mcp_name },
-    { label: 'Repo ID', value: data.repo_id },
-    { label: 'Agent', value: data.agent_id },
-    { label: 'Files', value: String(data.files_indexed) },
-    { label: 'Chunks', value: String(data.chunks_indexed) },
+    { label: 'Status', value: data.status || 'active' },
+    { label: 'Repos', value: String(data.repo_count || 0) },
+    { label: 'Files', value: String(data.files_indexed || 0) },
+    { label: 'Chunks', value: String(data.chunks_indexed || 0) },
     { label: 'Last Indexed', value: formatTime(data.indexed_at) },
-    { label: 'Source', value: data.source_repo_path || '' },
-    { label: 'Worktree', value: data.worktree_path || '' }
+    { label: 'Description', value: data.description || '' }
   ];
 
   for (const item of metrics) {
@@ -151,6 +153,23 @@ function renderDashboard(data) {
       <td class="mono">${row.error || ''}</td>
     `;
     dashboardAuditRowsEl.appendChild(tr);
+  }
+
+  dashboardRepoRowsEl.innerHTML = '';
+  const repos = Array.isArray(data?.repos) ? data.repos : [];
+  for (const repo of repos) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="mono">${repo.repo_name || ''}</td>
+      <td class="mono">${repo.repo_id || ''}</td>
+      <td class="mono">${repo.agent_id || ''}</td>
+      <td>${Number(repo.files_indexed || 0)}</td>
+      <td>${Number(repo.chunks_indexed || 0)}</td>
+      <td>${formatTime(repo.indexed_at)}</td>
+      <td class="mono">${repo.source_repo_path || ''}</td>
+      <td><button class="btn danger" data-delete-repo="${repo.repo_name || ''}">Delete</button></td>
+    `;
+    dashboardRepoRowsEl.appendChild(tr);
   }
 }
 
@@ -182,7 +201,9 @@ function selectedTool() {
 function fillToolDefaults() {
   const tool = selectedTool();
   if (!tool) return;
-  toolArgsInputEl.value = JSON.stringify(tool.defaults || {}, null, 2);
+  const defaults = { ...(tool.defaults || {}) };
+  if (!defaults.repo && state.repos[0]?.repo_name) defaults.repo = state.repos[0].repo_name;
+  toolArgsInputEl.value = JSON.stringify(defaults, null, 2);
 }
 
 async function loadMcps() {
@@ -205,15 +226,16 @@ async function loadSelectedMcp() {
     toolsListEl.innerHTML = '';
     toolSelectEl.innerHTML = '';
     dashboardAuditRowsEl.innerHTML = '';
-    deleteMcpBtn.disabled = true;
+    dashboardRepoRowsEl.innerHTML = '';
+    state.repos = [];
     renderConnectInstructions();
     return;
   }
 
   const mcp = await fetchJson(`/v1/mcps/${encodeURIComponent(mcpId)}`);
   selectedMcpTitleEl.textContent = mcp?.data?.mcp_name || mcpId;
+  state.repos = Array.isArray(mcp?.data?.repos) ? mcp.data.repos : [];
   renderDashboard(mcp.data || {});
-  deleteMcpBtn.disabled = false;
 
   const tools = await fetchJson(`/v1/mcps/${encodeURIComponent(mcpId)}/tools`);
   state.tools = Array.isArray(tools?.data?.tools) ? tools.data.tools : [];
@@ -287,7 +309,7 @@ async function createIndex() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    state.selectedMcpId = payload.name;
+    state.selectedMcpId = 'context';
     setMsg(indexMsgEl, 'Indexed');
     await refreshAll();
   } catch (error) {
@@ -295,15 +317,15 @@ async function createIndex() {
   }
 }
 
-async function deleteSelectedMcp() {
-  if (!state.selectedMcpId) return;
-  const confirmed = window.confirm(`Delete MCP index "${state.selectedMcpId}"?`);
+async function deleteRepo(repoName) {
+  const target = String(repoName || '').trim();
+  if (!target) return;
+  const confirmed = window.confirm(`Delete indexed repository "${target}" from Context MCP?`);
   if (!confirmed) return;
   try {
     setMsg(dashboardMsgEl, 'Deleting...');
-    await fetchJson(`/v1/index/repo/${encodeURIComponent(state.selectedMcpId)}`, { method: 'DELETE' });
+    await fetchJson(`/v1/index/repo/${encodeURIComponent(target)}`, { method: 'DELETE' });
     setMsg(dashboardMsgEl, 'Deleted');
-    state.selectedMcpId = '';
     await refreshAll();
   } catch (error) {
     setMsg(dashboardMsgEl, String(error?.message || error), true);
@@ -325,7 +347,6 @@ document.querySelectorAll('.tab').forEach((tab) => {
 
 $('refreshBtn').addEventListener('click', refreshAll);
 $('indexBtn').addEventListener('click', createIndex);
-$('deleteMcpBtn').addEventListener('click', deleteSelectedMcp);
 $('runPresetBtn').addEventListener('click', fillToolDefaults);
 $('runToolBtn').addEventListener('click', runTool);
 $('toolSelect').addEventListener('change', fillToolDefaults);
@@ -336,6 +357,12 @@ mcpListEl.addEventListener('click', async (event) => {
   state.selectedMcpId = target.getAttribute('data-mcp-id');
   renderMcpList();
   await loadSelectedMcp();
+});
+
+dashboardRepoRowsEl.addEventListener('click', async (event) => {
+  const button = event.target.closest('button[data-delete-repo]');
+  if (!button) return;
+  await deleteRepo(button.getAttribute('data-delete-repo'));
 });
 
 refreshAll();

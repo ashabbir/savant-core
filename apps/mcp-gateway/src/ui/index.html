@@ -46,9 +46,27 @@
           <div class="card">
             <h3>MCP Dashboard</h3>
             <div id="dashboardSummary" class="grid grid3"></div>
-            <div class="row">
-              <button id="deleteMcpBtn" class="btn danger" disabled>Delete MCP Index</button>
-              <span id="dashboardMsg" class="muted"></span>
+            <div class="row"><span id="dashboardMsg" class="muted"></span></div>
+          </div>
+
+          <div class="card">
+            <h3>Indexed Repositories (Context Data)</h3>
+            <div class="tableWrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Repo</th>
+                    <th>Repo ID</th>
+                    <th>Agent</th>
+                    <th>Files</th>
+                    <th>Chunks</th>
+                    <th>Indexed</th>
+                    <th>Source</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="dashboardRepoRows"></tbody>
+              </table>
             </div>
           </div>
 
