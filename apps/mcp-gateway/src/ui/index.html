@@ -39,6 +39,7 @@
           <button class="tab active" data-tab="dashboard">Dashboard</button>
           <button class="tab" data-tab="tools">Tools</button>
           <button class="tab" data-tab="run">Run Tool</button>
+          <button class="tab" data-tab="connect">Connect</button>
         </div>
 
         <section id="tab-dashboard" class="panel active">
@@ -126,6 +127,40 @@
           <div class="card">
             <h3>Result</h3>
             <pre id="runResult" class="result mono">Select an MCP and run a tool.</pre>
+          </div>
+        </section>
+
+        <section id="tab-connect" class="panel">
+          <div class="card">
+            <h3>Connect Instructions</h3>
+            <div class="grid grid2">
+              <div class="metric">
+                <div class="metricLabel">Gateway Base URL</div>
+                <div id="connectBaseUrl" class="metricValue mono">http://localhost:4444</div>
+              </div>
+              <div class="metric">
+                <div class="metricLabel">Selected MCP</div>
+                <div id="connectMcpId" class="metricValue mono">—</div>
+              </div>
+            </div>
+            <div class="connectList">
+              <div class="connectItem">
+                <strong>1. List MCPs</strong>
+                <pre id="connectCmdList" class="result mono"></pre>
+              </div>
+              <div class="connectItem">
+                <strong>2. List tools for selected MCP</strong>
+                <pre id="connectCmdTools" class="result mono"></pre>
+              </div>
+              <div class="connectItem">
+                <strong>3. Run memory search</strong>
+                <pre id="connectCmdSearch" class="result mono"></pre>
+              </div>
+              <div class="connectItem">
+                <strong>4. Run memory read</strong>
+                <pre id="connectCmdRead" class="result mono"></pre>
+              </div>
+            </div>
           </div>
         </section>
       </section>

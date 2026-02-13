@@ -30,10 +30,17 @@ const toolSelectEl = $('toolSelect');
 const toolArgsInputEl = $('toolArgsInput');
 const runMsgEl = $('runMsg');
 const runResultEl = $('runResult');
+const connectBaseUrlEl = $('connectBaseUrl');
+const connectMcpIdEl = $('connectMcpId');
+const connectCmdListEl = $('connectCmdList');
+const connectCmdToolsEl = $('connectCmdTools');
+const connectCmdSearchEl = $('connectCmdSearch');
+const connectCmdReadEl = $('connectCmdRead');
 
 tokenInput.value = localStorage.getItem('mcp_gateway_token') || '';
 tokenInput.addEventListener('change', () => {
   localStorage.setItem('mcp_gateway_token', tokenInput.value.trim());
+  renderConnectInstructions();
 });
 
 function authHeaders() {
@@ -52,6 +59,26 @@ function formatTime(value) {
 function setMsg(el, text, isError = false) {
   el.textContent = text || '';
   el.className = isError ? 'bad' : 'muted';
+}
+
+function renderConnectInstructions() {
+  const baseUrl = window.location.origin || 'http://localhost:4444';
+  const mcpId = state.selectedMcpId || '<mcp_id>';
+  const token = String(tokenInput.value || '').trim();
+  const authSegment = token ? ` -H 'Authorization: Bearer ${token}'` : '';
+
+  connectBaseUrlEl.textContent = baseUrl;
+  connectMcpIdEl.textContent = mcpId;
+  connectCmdListEl.textContent = `curl -s${authSegment} '${baseUrl}/v1/mcps'`;
+  connectCmdToolsEl.textContent = `curl -s${authSegment} '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools'`;
+  connectCmdSearchEl.textContent =
+`curl -s${authSegment} -H 'Content-Type: application/json' \\
+  -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/memory_search/run' \\
+  -d '{"arguments":{"query":"auth flow","limit":5}}'`;
+  connectCmdReadEl.textContent =
+`curl -s${authSegment} -H 'Content-Type: application/json' \\
+  -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/memory_read/run' \\
+  -d '{"arguments":{"path":"memory_bank/README.md"}}'`;
 }
 
 async function fetchJson(url, options = {}) {
@@ -179,6 +206,7 @@ async function loadSelectedMcp() {
     toolSelectEl.innerHTML = '';
     dashboardAuditRowsEl.innerHTML = '';
     deleteMcpBtn.disabled = true;
+    renderConnectInstructions();
     return;
   }
 
@@ -191,6 +219,7 @@ async function loadSelectedMcp() {
   state.tools = Array.isArray(tools?.data?.tools) ? tools.data.tools : [];
   renderTools();
   fillToolDefaults();
+  renderConnectInstructions();
 }
 
 async function refreshAll() {
@@ -310,3 +339,4 @@ mcpListEl.addEventListener('click', async (event) => {
 });
 
 refreshAll();
+renderConnectInstructions();
