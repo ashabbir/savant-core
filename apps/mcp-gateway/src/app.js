@@ -1,6 +1,6 @@
 import express from 'express';
 import { readSavantContextVersion } from './savant-context.js';
-import { appendAudit, getRepoIndex } from './store.js';
+import { appendAudit, deleteRepoIndex, getRepoIndex } from './store.js';
 import { indexRepository } from './indexer.js';
 import { readMemory, searchMemory } from './memory-tools.js';
 import { errorResponse } from './errors.js';
@@ -110,6 +110,26 @@ export function createApp(options = {}) {
       data: {
         status: 'indexed',
         last_updated: repo.indexedAt
+      }
+    });
+  });
+
+  app.delete('/v1/index/repo/:repo_name', (req, res) => {
+    const repoName = String(req.params.repo_name || '').trim();
+    if (!repoName) return errorResponse(res, 400, 'VALIDATION_ERROR', 'repo_name is required');
+
+    const removed = deleteRepoIndex(repoName);
+    if (!removed.deleted) {
+      return errorResponse(res, 404, 'NOT_FOUND', 'Repo index not found');
+    }
+
+    appendAudit({ at: new Date().toISOString(), tool: 'repo_index_delete', repo: repoName, ok: true });
+    return res.json({
+      ok: true,
+      data: {
+        deleted: true,
+        repo_name: repoName,
+        repo_id: removed.record?.repoId || null
       }
     });
   });

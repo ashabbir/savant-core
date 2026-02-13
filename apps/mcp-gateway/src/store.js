@@ -48,6 +48,18 @@ export function getRepoIndex(repoName) {
   return store.repos[repoName] || null;
 }
 
+export function deleteRepoIndex(repoName) {
+  const key = String(repoName || '');
+  const store = readStore();
+  if (!Object.prototype.hasOwnProperty.call(store.repos, key)) {
+    return { deleted: false, record: null };
+  }
+  const record = store.repos[key];
+  delete store.repos[key];
+  writeStore(store);
+  return { deleted: true, record };
+}
+
 export function appendAudit(entry) {
   const store = readStore();
   store.audit.push(entry);

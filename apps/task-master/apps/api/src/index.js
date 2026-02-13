@@ -3988,10 +3988,34 @@ app.delete('/api/context/repos/:name', requireAuth, async (req, res) => {
   try {
     const name = String(req.params.name || '').trim().toLowerCase();
     const repos = readContextRepos();
-    const next = repos.filter((r) => String(r.repoName).toLowerCase() !== name);
-    if (next.length === repos.length) return bad(res, 404, 'Context repo not found');
+    const idx = repos.findIndex((r) => String(r.repoName).toLowerCase() === name);
+    if (idx < 0) return bad(res, 404, 'Context repo not found');
+    const existing = repos[idx];
+
+    const gatewayUrl = process.env.CONTEXT_GATEWAY_URL || 'http://localhost:4444';
+    const gatewayToken = process.env.CONTEXT_GATEWAY_TOKEN || '';
+    const gatewayDeleteUrl = new URL(`/v1/index/repo/${encodeURIComponent(existing.repoName)}`, gatewayUrl);
+    const gatewayResponse = await fetch(gatewayDeleteUrl, {
+      method: 'DELETE',
+      headers: {
+        ...(gatewayToken ? { Authorization: `Bearer ${gatewayToken}` } : {})
+      },
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!gatewayResponse.ok && gatewayResponse.status !== 404) {
+      const details = await gatewayResponse.text().catch(() => '');
+      return bad(
+        res,
+        502,
+        'Failed to delete repo index in context gateway',
+        details || `gateway responded ${gatewayResponse.status}`
+      );
+    }
+
+    const next = repos.filter((r) => String(r.id) !== String(existing.id));
     writeContextRepos(next);
-    ok(res, true);
+    ok(res, { deleted: true, repoName: existing.repoName, indexDeleted: gatewayResponse.status !== 404 });
   } catch (err) {
     bad(res, 500, 'Failed to delete context repo', err.message);
   }
