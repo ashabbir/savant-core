@@ -33,13 +33,13 @@
     "projectId": "69841b79fc994d7e2152ff8a",
     "enabled": true,
     "indexStatus": "INDEXED",
-    "indexAcceptedAt": "2026-02-13T03:46:07.884Z",
-    "lastIndexedAt": "2026-02-13T03:46:07.781Z",
+    "indexAcceptedAt": "2026-02-13T03:46:47.908Z",
+    "lastIndexedAt": "2026-02-13T03:46:47.834Z",
     "lastFileCount": 740,
     "lastChunkCount": 3527,
     "lastError": null,
     "createdAt": "2026-02-13T02:53:30.531Z",
-    "updatedAt": "2026-02-13T03:46:07.884Z",
+    "updatedAt": "2026-02-13T03:46:47.908Z",
     "worktreePath": "/workdir/worktrees/savant-core/shared"
   }
 ]

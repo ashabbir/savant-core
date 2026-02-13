@@ -119,6 +119,7 @@ services:
     ports:
       - "4444:4444"
     volumes:
+      - ./apps/mcp-gateway/src:/app/src
       - mcp-gateway-data:/app/data
       - agent-workdir:/workdir
     healthcheck:

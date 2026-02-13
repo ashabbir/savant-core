@@ -45,6 +45,26 @@ function broadcast(event, data) {
 function ok(res, data) { res.json({ ok: true, data }); }
 function bad(res, status, message, details) { res.status(status).json({ ok: false, message, details }); }
 
+function canonicalizeJarvisSessionKey(value, username = '') {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    const safeUser = String(username || '').trim() || 'anonymous';
+    return `jarvis:${safeUser}`;
+  }
+  if (raw.startsWith('openai:jarvis:')) return raw.slice('openai:'.length);
+  return raw;
+}
+
+function jarvisSessionCandidates(value, username = '') {
+  const canonical = canonicalizeJarvisSessionKey(value, username);
+  const candidates = [canonical];
+  if (canonical.startsWith('jarvis:')) {
+    const legacy = `openai:${canonical}`;
+    if (!candidates.includes(legacy)) candidates.push(legacy);
+  }
+  return candidates;
+}
+
 const contextRepoStorePath = path.resolve(process.cwd(), 'data/context-repos.json');
 const contextIndexQueue = createContextQueue();
 const repoObserver = createRepoObserver({ queue: contextIndexQueue });
@@ -1575,7 +1595,15 @@ app.get('/api/jarvis/sessions', async (req, res) => {
     }
 
     const data = await response.json();
-    ok(res, data.sessions);
+    const normalized = [];
+    const seen = new Set();
+    for (const session of Array.isArray(data?.sessions) ? data.sessions : []) {
+      const key = canonicalizeJarvisSessionKey(session?.key || '');
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      normalized.push({ ...session, key });
+    }
+    ok(res, normalized);
   } catch (err) {
     bad(res, 500, 'Failed to fetch sessions from Talon', err.message);
   }
@@ -1592,21 +1620,29 @@ app.post('/api/jarvis/sessions/label', async (req, res) => {
   if (!sessionKey || !label) return bad(res, 400, 'sessionKey and label required');
 
   try {
-    const response = await fetch(new URL('/v1/sessions', gatewayUrl), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        'x-talon-agent-id': agentId
-      },
-      body: JSON.stringify({ sessionKey, label })
-    });
+    const candidateSessionKeys = jarvisSessionCandidates(sessionKey, req.user?.username);
+    for (let i = 0; i < candidateSessionKeys.length; i += 1) {
+      const response = await fetch(new URL('/v1/sessions', gatewayUrl), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          'x-talon-agent-id': agentId
+        },
+        body: JSON.stringify({ sessionKey: candidateSessionKeys[i], label })
+      });
 
-    if (!response.ok) {
+      if (response.ok) {
+        return ok(res, { ok: true });
+      }
+
+      if (response.status === 404 && i < candidateSessionKeys.length - 1) {
+        continue;
+      }
+
       const payload = await readTalonResponse(response);
       return bad(res, response.status, 'Talon error', payload.json || payload.raw);
     }
-
     ok(res, { ok: true });
   } catch (err) {
     bad(res, 500, 'Failed to update session label in Talon', err.message);
@@ -1624,10 +1660,7 @@ app.get('/api/jarvis/sessions/transcript', async (req, res) => {
   if (!sessionKey) return bad(res, 400, 'sessionKey required');
 
   try {
-    const requestedSessionKey = String(sessionKey).trim();
-    const candidateSessionKeys = requestedSessionKey.startsWith('jarvis:')
-      ? [requestedSessionKey, `openai:${requestedSessionKey}`]
-      : [requestedSessionKey];
+    const candidateSessionKeys = jarvisSessionCandidates(sessionKey, req.user?.username);
 
     for (let i = 0; i < candidateSessionKeys.length; i += 1) {
       const key = candidateSessionKeys[i];
@@ -1671,24 +1704,32 @@ app.delete('/api/jarvis/sessions', async (req, res) => {
   if (!sessionKey) return bad(res, 400, 'sessionKey required');
 
   try {
-    const url = new URL('/v1/sessions', gatewayUrl);
-    url.searchParams.set('sessionKey', sessionKey);
+    const candidateSessionKeys = jarvisSessionCandidates(sessionKey, req.user?.username);
+    for (let i = 0; i < candidateSessionKeys.length; i += 1) {
+      const url = new URL('/v1/sessions', gatewayUrl);
+      url.searchParams.set('sessionKey', candidateSessionKeys[i]);
 
-    const response = await fetch(url, {
-      method: 'DELETE',
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        'x-talon-agent-id': agentId
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          'x-talon-agent-id': agentId
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json().catch(() => ({ ok: true }));
+        return ok(res, data);
       }
-    });
 
-    if (!response.ok) {
+      if (response.status === 404 && i < candidateSessionKeys.length - 1) {
+        continue;
+      }
+
       const payload = await readTalonResponse(response);
       return bad(res, response.status, 'Talon error', payload.json || payload.raw);
     }
-
-    const data = await response.json().catch(() => ({ ok: true }));
-    ok(res, data);
+    ok(res, { ok: true });
   } catch (err) {
     bad(res, 500, 'Failed to delete session in Talon', err.message);
   }
@@ -3665,8 +3706,7 @@ app.post('/api/jarvis/chat', async (req, res) => {
   });
   const agentKey = resolveAgentKey(agent) || agentId;
 
-  const sessionKey = parsed.data.sessionKey || `openai:jarvis:${req.user.username}`;
-  const talonSessionKey = sessionKey.startsWith('jarvis:') ? `openai:${sessionKey}` : sessionKey;
+  const talonSessionKey = canonicalizeJarvisSessionKey(parsed.data.sessionKey, req.user.username);
   const runtimeHints = [agent?.soul, agent?.guardrails, agent?.bootstrap, agent?.everyone]
     .map(v => String(v || '').trim())
     .filter(Boolean)
@@ -3825,6 +3865,11 @@ app.post('/api/jarvis/chat', async (req, res) => {
       };
 
       const modelCandidates = [
+        ...directModelCandidates,
+        'openai-codex/gpt-5.3-codex',
+        'openai-codex/gpt-5.2-codex',
+        'openai/gpt-5.3-codex',
+        'openai/gpt-5.2-codex',
         agent?.defaultModel,
         agent?.fallbackModel,
         agent?.model,
@@ -3867,7 +3912,15 @@ app.post('/api/jarvis/chat', async (req, res) => {
       }
 
       if (!recovered && invalidReplyPattern.test(String(text || ''))) {
-        return bad(res, 502, 'Jarvis returned an invalid upstream reply', { text, model });
+        const fallbackSummary = contextLookupUsed
+          ? summarizeContextLookupData(contextLookupTool, contextLookupData)
+          : '';
+        const fallbackText = contextLookupUsed
+          ? `Jarvis model backend is unavailable right now. Returning Context MCP data only.\n\n${fallbackSummary || '(no indexed rows found)'}`
+          : 'Jarvis is reachable, but no compatible authenticated model is available for this request. Configure Talon auth for openai-codex or google-gemini-cli, or set Jarvis default model to a compatible provider.';
+        text = fallbackText;
+        model = model || 'jarvis-fallback';
+        usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
       }
     }
 

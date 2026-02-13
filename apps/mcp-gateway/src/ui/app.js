@@ -2,11 +2,21 @@ function $(id) {
   return document.getElementById(id);
 }
 
+function initHotReload() {
+  if (typeof window === 'undefined' || typeof window.EventSource === 'undefined') return;
+  if (window.location.protocol !== 'http:' && window.location.protocol !== 'https:') return;
+  const source = new EventSource('/ui/__hmr');
+  source.addEventListener('reload', () => {
+    window.location.reload();
+  });
+}
+
 const state = {
   mcps: [],
   selectedMcpId: '',
   tools: [],
-  repos: []
+  repos: [],
+  abilities: []
 };
 
 const tokenInput = $('tokenInput');
@@ -19,6 +29,19 @@ const dashboardSummaryEl = $('dashboardSummary');
 const dashboardAuditRowsEl = $('dashboardAuditRows');
 const dashboardRepoRowsEl = $('dashboardRepoRows');
 const dashboardMsgEl = $('dashboardMsg');
+const contextRepoCardEl = $('contextRepoCard');
+const contextIndexCardEl = $('contextIndexCard');
+const abilitiesBlocksCardEl = $('abilitiesBlocksCard');
+const abilitiesCreateCardEl = $('abilitiesCreateCard');
+const abilitiesRowsEl = $('abilitiesRows');
+const abilityTypeInput = $('abilityTypeInput');
+const abilityPriorityInput = $('abilityPriorityInput');
+const abilityIdInput = $('abilityIdInput');
+const abilityDirInput = $('abilityDirInput');
+const abilityTagsInput = $('abilityTagsInput');
+const abilityNameInput = $('abilityNameInput');
+const abilityBodyInput = $('abilityBodyInput');
+const abilityMsgEl = $('abilityMsg');
 
 const repoIdInput = $('repoIdInput');
 const repoNameInput = $('repoNameInput');
@@ -76,22 +99,27 @@ function renderConnectInstructions() {
   connectMcpIdEl.textContent = mcpId;
   connectCmdListEl.textContent = `curl -s${authSegment} '${baseUrl}/v1/mcps'`;
   connectCmdToolsEl.textContent = `curl -s${authSegment} '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools'`;
+  const searchTool = mcpId === 'abilities' ? 'resolve_abilities' : 'memory_search';
+  const readTool = mcpId === 'abilities' ? 'list_ability_blocks' : 'memory_read';
+  const codeSearchTool = mcpId === 'abilities' ? 'add_ability_block' : 'code_search';
+  const codeReadTool = mcpId === 'abilities' ? 'list_rules' : 'code_read';
+
   connectCmdSearchEl.textContent =
 `curl -s${authSegment} -H 'Content-Type: application/json' \\
-  -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/memory_search/run' \\
-  -d '{"arguments":{"repo":"${repoName}","query":"auth flow","limit":5}}'`;
+  -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/${searchTool}/run' \\
+  -d '${mcpId === 'abilities' ? '{"arguments":{"persona":"engineer","tags":["backend"]}}' : `{"arguments":{"repo":"${repoName}","query":"auth flow","limit":5}}`}'`;
   connectCmdReadEl.textContent =
 `curl -s${authSegment} -H 'Content-Type: application/json' \\
-  -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/memory_read/run' \\
-  -d '{"arguments":{"repo":"${repoName}","path":"memory_bank/README.md"}}'`;
+  -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/${readTool}/run' \\
+  -d '${mcpId === 'abilities' ? '{"arguments":{"type":"rule"}}' : `{"arguments":{"repo":"${repoName}","path":"memory_bank/README.md"}}`}'`;
   connectCmdCodeSearchEl.textContent =
 `curl -s${authSegment} -H 'Content-Type: application/json' \\
-  -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/code_search/run' \\
-  -d '{"arguments":{"repo":"${repoName}","query":"TODO","limit":10}}'`;
+  -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/${codeSearchTool}/run' \\
+  -d '${mcpId === 'abilities' ? '{"arguments":{"type":"rule","id":"rule.backend.base","relativeDir":"backend","priority":100,"tags":["backend"],"body":"# Backend rule"}}' : `{"arguments":{"repo":"${repoName}","query":"TODO","limit":10}}`}'`;
   connectCmdCodeReadEl.textContent =
 `curl -s${authSegment} -H 'Content-Type: application/json' \\
-  -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/code_read/run' \\
-  -d '{"arguments":{"repo":"${repoName}","path":"README.md"}}'`;
+  -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/${codeReadTool}/run' \\
+  -d '${mcpId === 'abilities' ? '{"arguments":{}}' : `{"arguments":{"repo":"${repoName}","path":"README.md"}}`}'`;
 }
 
 async function fetchJson(url, options = {}) {
@@ -134,6 +162,12 @@ function renderMcpList() {
 }
 
 function renderDashboard(data) {
+  const isAbilities = state.selectedMcpId === 'abilities';
+  contextRepoCardEl.style.display = isAbilities ? 'none' : '';
+  contextIndexCardEl.style.display = isAbilities ? 'none' : '';
+  abilitiesBlocksCardEl.style.display = isAbilities ? '' : 'none';
+  abilitiesCreateCardEl.style.display = isAbilities ? '' : 'none';
+
   dashboardSummaryEl.innerHTML = '';
   const metrics = [
     { label: 'MCP', value: data.mcp_name },
@@ -165,21 +199,38 @@ function renderDashboard(data) {
     dashboardAuditRowsEl.appendChild(tr);
   }
 
-  dashboardRepoRowsEl.innerHTML = '';
-  const repos = Array.isArray(data?.repos) ? data.repos : [];
-  for (const repo of repos) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td class="mono">${repo.repo_name || ''}</td>
-      <td class="mono">${repo.repo_id || ''}</td>
-      <td class="mono">${repo.agent_id || ''}</td>
-      <td>${Number(repo.files_indexed || 0)}</td>
-      <td>${Number(repo.chunks_indexed || 0)}</td>
-      <td>${formatTime(repo.indexed_at)}</td>
-      <td class="mono">${repo.source_repo_path || ''}</td>
-      <td><button class="btn danger" data-delete-repo="${repo.repo_name || ''}">Delete</button></td>
-    `;
-    dashboardRepoRowsEl.appendChild(tr);
+  if (isAbilities) {
+    abilitiesRowsEl.innerHTML = '';
+    const blocks = Array.isArray(data?.abilities?.blocks) ? data.abilities.blocks : [];
+    for (const block of blocks) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="mono">${block.id || ''}</td>
+        <td class="mono">${block.type || ''}</td>
+        <td>${Number(block.priority || 0)}</td>
+        <td class="mono">${Array.isArray(block.tags) ? block.tags.join(', ') : ''}</td>
+        <td class="mono">${block.path || ''}</td>
+        <td>${formatTime(block.updated_at)}</td>
+      `;
+      abilitiesRowsEl.appendChild(tr);
+    }
+  } else {
+    dashboardRepoRowsEl.innerHTML = '';
+    const repos = Array.isArray(data?.repos) ? data.repos : [];
+    for (const repo of repos) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="mono">${repo.repo_name || ''}</td>
+        <td class="mono">${repo.repo_id || ''}</td>
+        <td class="mono">${repo.agent_id || ''}</td>
+        <td>${Number(repo.files_indexed || 0)}</td>
+        <td>${Number(repo.chunks_indexed || 0)}</td>
+        <td>${formatTime(repo.indexed_at)}</td>
+        <td class="mono">${repo.source_repo_path || ''}</td>
+        <td><button class="btn danger" data-delete-repo="${repo.repo_name || ''}">Delete</button></td>
+      `;
+      dashboardRepoRowsEl.appendChild(tr);
+    }
   }
 }
 
@@ -245,6 +296,7 @@ async function loadSelectedMcp() {
   const mcp = await fetchJson(`/v1/mcps/${encodeURIComponent(mcpId)}`);
   selectedMcpTitleEl.textContent = mcp?.data?.mcp_name || mcpId;
   state.repos = Array.isArray(mcp?.data?.repos) ? mcp.data.repos : [];
+  state.abilities = Array.isArray(mcp?.data?.abilities?.blocks) ? mcp.data.abilities.blocks : [];
   renderDashboard(mcp.data || {});
 
   const tools = await fetchJson(`/v1/mcps/${encodeURIComponent(mcpId)}/tools`);
@@ -327,6 +379,39 @@ async function createIndex() {
   }
 }
 
+async function addAbilityBlockFromForm() {
+  const payload = {
+    type: String(abilityTypeInput.value || '').trim(),
+    id: String(abilityIdInput.value || '').trim(),
+    relativeDir: String(abilityDirInput.value || '').trim(),
+    tags: String(abilityTagsInput.value || '')
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean),
+    priority: Number(abilityPriorityInput.value || 0),
+    name: String(abilityNameInput.value || '').trim(),
+    body: String(abilityBodyInput.value || '').trim()
+  };
+
+  if (!payload.type || !payload.id || !payload.body || !Number.isFinite(payload.priority)) {
+    setMsg(abilityMsgEl, 'type, id, priority, and body are required', true);
+    return;
+  }
+
+  try {
+    setMsg(abilityMsgEl, 'Adding...');
+    await fetchJson('/v1/mcps/abilities/tools/add_ability_block/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ arguments: payload })
+    });
+    setMsg(abilityMsgEl, 'Added');
+    await loadSelectedMcp();
+  } catch (error) {
+    setMsg(abilityMsgEl, String(error?.message || error), true);
+  }
+}
+
 async function deleteRepo(repoName) {
   const target = String(repoName || '').trim();
   if (!target) return;
@@ -360,6 +445,7 @@ $('indexBtn').addEventListener('click', createIndex);
 $('runPresetBtn').addEventListener('click', fillToolDefaults);
 $('runToolBtn').addEventListener('click', runTool);
 $('toolSelect').addEventListener('change', fillToolDefaults);
+$('abilityAddBtn').addEventListener('click', addAbilityBlockFromForm);
 
 mcpListEl.addEventListener('click', async (event) => {
   const target = event.target.closest('[data-mcp-id]');
@@ -377,3 +463,4 @@ dashboardRepoRowsEl.addEventListener('click', async (event) => {
 
 refreshAll();
 renderConnectInstructions();
+initHotReload();

@@ -132,7 +132,7 @@ function CommandBar({ inFooter = false }) {
   });
 
   const handleNewSession = () => {
-    const newKey = `openai:jarvis:session:${Date.now()}`;
+    const newKey = `jarvis:session:${Date.now()}`;
     setSelectedSessionKey(newKey);
     setHistory([]);
     historyBySessionRef.current.set(newKey, []);

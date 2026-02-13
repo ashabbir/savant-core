@@ -23,7 +23,7 @@
       <aside class="sidebar">
         <div class="sidebarHead">
           <h2>MCPs</h2>
-          <span id="mcpCount" class="pill">0</span>
+          <span id="mcpCount" class="badge">0</span>
         </div>
         <div id="mcpList" class="mcpList"></div>
         <div id="mcpEmpty" class="muted" style="display: none;">No MCP indexes found.</div>
@@ -49,7 +49,7 @@
             <div class="row"><span id="dashboardMsg" class="muted"></span></div>
           </div>
 
-          <div class="card">
+          <div id="contextRepoCard" class="card">
             <h3>Indexed Repositories (Context Data)</h3>
             <div class="tableWrap">
               <table>
@@ -70,7 +70,7 @@
             </div>
           </div>
 
-          <div class="card">
+          <div id="contextIndexCard" class="card">
             <h3>Index New Repository</h3>
             <div class="grid grid2">
               <div>
@@ -93,6 +93,67 @@
             <div class="row">
               <button id="indexBtn" class="btn primary">Index</button>
               <span id="indexMsg" class="muted"></span>
+            </div>
+          </div>
+
+          <div id="abilitiesBlocksCard" class="card" style="display: none;">
+            <h3>Abilities Blocks</h3>
+            <div class="tableWrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Type</th>
+                    <th>Priority</th>
+                    <th>Tags</th>
+                    <th>Path</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody id="abilitiesRows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="abilitiesCreateCard" class="card" style="display: none;">
+            <h3>Add Ability Block</h3>
+            <div class="grid grid2">
+              <div>
+                <label for="abilityTypeInput">Type</label>
+                <select id="abilityTypeInput" class="input mono">
+                  <option value="rule">rule</option>
+                  <option value="policy">policy</option>
+                  <option value="style">style</option>
+                  <option value="persona">persona</option>
+                  <option value="repo">repo</option>
+                </select>
+              </div>
+              <div>
+                <label for="abilityPriorityInput">Priority</label>
+                <input id="abilityPriorityInput" class="input mono" value="100" />
+              </div>
+              <div>
+                <label for="abilityIdInput">ID</label>
+                <input id="abilityIdInput" class="input mono" placeholder="rule.backend.python.fastapi" />
+              </div>
+              <div>
+                <label for="abilityDirInput">Directory (under type root)</label>
+                <input id="abilityDirInput" class="input mono" placeholder="backend/python" />
+              </div>
+              <div>
+                <label for="abilityTagsInput">Tags (comma-separated)</label>
+                <input id="abilityTagsInput" class="input mono" placeholder="backend,python,fastapi" />
+              </div>
+              <div>
+                <label for="abilityNameInput">Name (optional)</label>
+                <input id="abilityNameInput" class="input mono" placeholder="FastAPI backend rules" />
+              </div>
+            </div>
+            <label for="abilityBodyInput">Markdown Body</label>
+            <textarea id="abilityBodyInput" class="input mono textarea" rows="10" placeholder="# Rule&#10;- Keep handlers thin&#10;- Validate all inputs"></textarea>
+            <div class="row">
+              <button id="abilityAddBtn" class="btn primary">Add Block</button>
+              <span id="abilityMsg" class="muted"></span>
             </div>
           </div>
 

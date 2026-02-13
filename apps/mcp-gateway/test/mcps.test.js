@@ -38,8 +38,9 @@ test('MCP endpoints expose Context MCP and run tools against indexed repos', asy
     const mcpsBody = await mcpsResponse.json();
     assert.equal(mcpsResponse.status, 200);
     assert.equal(mcpsBody.ok, true);
-    assert.equal(mcpsBody.data.total, 1);
-    assert.equal(mcpsBody.data.mcps[0].mcp_id, 'context');
+    assert.equal(mcpsBody.data.total >= 2, true);
+    assert.equal(mcpsBody.data.mcps.some((mcp) => mcp.mcp_id === 'context'), true);
+    assert.equal(mcpsBody.data.mcps.some((mcp) => mcp.mcp_id === 'abilities'), true);
 
     const toolsResponse = await fetch(`http://127.0.0.1:${port}/v1/mcps/context/tools`);
     const toolsBody = await toolsResponse.json();

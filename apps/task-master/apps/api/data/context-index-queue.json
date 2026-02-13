@@ -215,5 +215,22 @@
     "startedAt": "2026-02-13T03:46:07.360Z",
     "completedAt": "2026-02-13T03:46:07.884Z",
     "error": null
+  },
+  {
+    "id": "6599d382-a48d-459f-abfe-c47ea53959b7",
+    "event": "repo.reindex",
+    "payload": {
+      "repo_id": "4ffbb88f-7481-4f9e-a1dc-29007359637a",
+      "path": "https://github.com/ashabbir/savant-core",
+      "name": "savant-core",
+      "agent_id": "shared"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "createdAt": "2026-02-13T03:46:43.048Z",
+    "updatedAt": "2026-02-13T03:46:47.909Z",
+    "startedAt": "2026-02-13T03:46:47.403Z",
+    "completedAt": "2026-02-13T03:46:47.909Z",
+    "error": null
   }
 ]
