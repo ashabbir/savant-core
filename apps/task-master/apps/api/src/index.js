@@ -3903,17 +3903,16 @@ app.post('/api/context/repos/:name/reindex', requireAuth, async (req, res) => {
     const idx = repos.findIndex((r) => String(r.repoName).toLowerCase() === name);
     if (idx < 0) return bad(res, 404, 'Context repo not found');
 
-    const stats = countRepoStats(repos[idx].repoPath);
+    const repo = repos[idx];
+    const queuedJob = contextIndexQueue.enqueue('repo.reindex', buildReindexPayload(repo));
     repos[idx] = {
-      ...repos[idx],
-      lastIndexedAt: stats.error ? repos[idx].lastIndexedAt : new Date().toISOString(),
-      lastFileCount: stats.fileCount,
-      lastChunkCount: stats.chunkCount,
-      lastError: stats.error,
+      ...repo,
+      indexStatus: 'QUEUED',
+      lastError: null,
       updatedAt: new Date().toISOString()
     };
     writeContextRepos(repos);
-    ok(res, repos[idx]);
+    ok(res, { ...repos[idx], accepted: true, jobId: queuedJob.id });
   } catch (err) {
     bad(res, 500, 'Failed to reindex context repo', err.message);
   }
@@ -4183,8 +4182,10 @@ httpServer.listen(port, host, () => {
     }, pollMs);
   }
 
-  const contextPollMs = Number(process.env.CONTEXT_INDEX_QUEUE_POLL_MS || 0);
+  const contextPollMs = Number(process.env.CONTEXT_INDEX_QUEUE_POLL_MS || 5000);
   if (contextPollMs > 0) {
+    processContextRepoQueue()
+      .catch((err) => console.error('Context index queue startup processing failed', err));
     setInterval(() => {
       processContextRepoQueue()
         .catch((err) => console.error('Context index queue processing failed', err));

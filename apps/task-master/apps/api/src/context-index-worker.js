@@ -66,8 +66,12 @@ export function createContextIndexWorker(params) {
       const repos = readRepos();
       const changed = updateRepoStatus(repos, payload.repo_id, (repo) => ({
         ...repo,
-        indexStatus: 'INDEXING',
+        indexStatus: 'INDEXED',
         indexAcceptedAt: new Date().toISOString(),
+        lastIndexedAt: responseData?.indexed_at ? String(responseData.indexed_at) : new Date().toISOString(),
+        lastFileCount: Number(responseData?.files_indexed || 0),
+        lastChunkCount: Number(responseData?.chunks_indexed || 0),
+        lastError: null,
         worktreePath: responseData?.worktree_path ? String(responseData.worktree_path) : repo.worktreePath,
         updatedAt: new Date().toISOString()
       }));

@@ -81,7 +81,8 @@ export function createApp(options = {}) {
           status: 'indexed',
           indexed_at: record.indexedAt,
           worktree_path: record.worktreePath,
-          files_indexed: (record.files || []).length
+          files_indexed: (record.files || []).length,
+          chunks_indexed: (record.files || []).reduce((sum, file) => sum + (file.chunks || []).length, 0)
         }
       });
     } catch (error) {

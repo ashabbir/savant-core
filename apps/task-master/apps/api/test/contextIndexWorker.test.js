@@ -11,7 +11,7 @@ function makeTempFile(name) {
   return path.join(root, name);
 }
 
-test('worker sends /v1/index/repo and updates repo to INDEXING on 202', async () => {
+test('worker sends /v1/index/repo and updates repo to INDEXED on 202', async () => {
   const queuePath = makeTempFile('queue.json');
   const repoStorePath = makeTempFile('repos.json');
 
@@ -32,7 +32,18 @@ test('worker sends /v1/index/repo and updates repo to INDEXING on 202', async ()
     writeRepos: (repos) => fs.writeFileSync(repoStorePath, JSON.stringify(repos, null, 2), 'utf8'),
     fetchImpl: async (url, init) => {
       calls.push({ url: String(url), init });
-      return new Response(JSON.stringify({ ok: true, data: { worktree_path: '/workdir/worktrees/savant-core/shared' } }), { status: 202, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            worktree_path: '/workdir/worktrees/savant-core/shared',
+            indexed_at: '2026-02-13T00:00:00.000Z',
+            files_indexed: 12,
+            chunks_indexed: 34
+          }
+        }),
+        { status: 202, headers: { 'content-type': 'application/json' } },
+      );
     },
     gatewayUrl: 'http://mcp-gateway:4444'
   });
@@ -43,8 +54,11 @@ test('worker sends /v1/index/repo and updates repo to INDEXING on 202', async ()
   assert.equal(calls[0].url, 'http://mcp-gateway:4444/v1/index/repo');
 
   const updatedRepos = JSON.parse(fs.readFileSync(repoStorePath, 'utf8'));
-  assert.equal(updatedRepos[0].indexStatus, 'INDEXING');
+  assert.equal(updatedRepos[0].indexStatus, 'INDEXED');
   assert.equal(Boolean(updatedRepos[0].indexAcceptedAt), true);
+  assert.equal(updatedRepos[0].lastIndexedAt, '2026-02-13T00:00:00.000Z');
+  assert.equal(updatedRepos[0].lastFileCount, 12);
+  assert.equal(updatedRepos[0].lastChunkCount, 34);
   assert.equal(updatedRepos[0].worktreePath, '/workdir/worktrees/savant-core/shared');
 });
 
