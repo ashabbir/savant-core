@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Savant MCP Gateway</title>
+    <link rel="stylesheet" href="/ui/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>MCP Gateway</h1>
+      <div class="topbarActions">
+        <button id="refreshBtn" class="btn">Refresh</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="card">
+        <h2>Gateway</h2>
+        <div id="health" class="muted">Loading...</div>
+      </section>
+
+      <section class="card">
+        <h2>Auth (optional)</h2>
+        <label for="tokenInput">Bearer token</label>
+        <input id="tokenInput" class="input mono" placeholder="Paste token if gateway auth is enabled" />
+      </section>
+
+      <section class="card">
+        <h2>Index Repository</h2>
+        <div class="grid2">
+          <div>
+            <label for="repoIdInput">Repo ID</label>
+            <input id="repoIdInput" class="input mono" placeholder="repo-123" />
+          </div>
+          <div>
+            <label for="repoNameInput">Repo name</label>
+            <input id="repoNameInput" class="input mono" placeholder="savant-core" />
+          </div>
+          <div>
+            <label for="repoPathInput">Path / GitHub URL</label>
+            <input id="repoPathInput" class="input mono" placeholder="/workdir/repos/my-repo or https://github.com/org/repo" />
+          </div>
+          <div>
+            <label for="agentIdInput">Agent ID</label>
+            <input id="agentIdInput" class="input mono" value="shared" />
+          </div>
+        </div>
+        <div class="row">
+          <button id="indexBtn" class="btn primary">Index</button>
+          <span id="indexMsg" class="muted"></span>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Indexed Repositories</h2>
+        <div id="repoSummary" class="muted">Loading...</div>
+        <div class="tableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Repo ID</th>
+                <th>Agent</th>
+                <th>Files</th>
+                <th>Chunks</th>
+                <th>Indexed At</th>
+                <th>Source</th>
+                <th>Worktree</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="repoRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Audit Log</h2>
+        <div class="row">
+          <label for="auditLimitInput">Limit</label>
+          <input id="auditLimitInput" class="input mono small" value="100" />
+          <button id="reloadAuditBtn" class="btn">Reload</button>
+        </div>
+        <div class="tableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Tool</th>
+                <th>Repo</th>
+                <th>OK</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody id="auditRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/ui/app.js"></script>
+  </body>
+</html>

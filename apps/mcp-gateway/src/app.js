@@ -1,6 +1,8 @@
 import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readSavantContextVersion } from './savant-context.js';
-import { appendAudit, deleteRepoIndex, getRepoIndex } from './store.js';
+import { appendAudit, deleteRepoIndex, getRepoIndex, listAuditEntries, listRepoIndexes } from './store.js';
 import { indexRepository } from './indexer.js';
 import { readMemory, searchMemory } from './memory-tools.js';
 import { errorResponse } from './errors.js';
@@ -16,12 +18,18 @@ function fireAndForget(promise, onError) {
 export function createApp(options = {}) {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
+  const uiDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui');
 
   const readVersion = options.readVersion || readSavantContextVersion;
   const indexRepo = options.indexRepository || indexRepository;
   const search = options.searchMemory || searchMemory;
   const read = options.readMemory || readMemory;
   const notifyWebhook = options.notifyWebhook || sendIndexWebhook;
+
+  app.get('/', (_req, res) => {
+    res.redirect('/ui/');
+  });
+  app.use('/ui', express.static(uiDir));
 
   app.use('/v1', (req, res, next) => {
     const verdict = validateGatewayAuth(req.headers.authorization);
@@ -110,6 +118,41 @@ export function createApp(options = {}) {
       data: {
         status: 'indexed',
         last_updated: repo.indexedAt
+      }
+    });
+  });
+
+  app.get('/v1/index/repos', (_req, res) => {
+    const repos = listRepoIndexes();
+    const data = repos.map((repo) => ({
+      repo_name: repo.repoName || '',
+      repo_id: repo.repoId || '',
+      source_repo_path: repo.sourceRepoPath || repo.repoPath || '',
+      worktree_path: repo.worktreePath || repo.repoPath || '',
+      agent_id: repo.agentId || 'shared',
+      indexed_at: repo.indexedAt || null,
+      files_indexed: Array.isArray(repo.files) ? repo.files.length : 0,
+      chunks_indexed: Array.isArray(repo.files)
+        ? repo.files.reduce((sum, file) => sum + (Array.isArray(file?.chunks) ? file.chunks.length : 0), 0)
+        : 0
+    }));
+    return res.json({
+      ok: true,
+      data: {
+        total: data.length,
+        repos: data
+      }
+    });
+  });
+
+  app.get('/v1/audit', (req, res) => {
+    const limit = Number(req.query.limit || 200);
+    const entries = listAuditEntries(limit);
+    return res.json({
+      ok: true,
+      data: {
+        total: entries.length,
+        entries
       }
     });
   });

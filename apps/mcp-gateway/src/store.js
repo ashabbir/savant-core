@@ -48,6 +48,11 @@ export function getRepoIndex(repoName) {
   return store.repos[repoName] || null;
 }
 
+export function listRepoIndexes() {
+  const store = readStore();
+  return Object.values(store.repos || {});
+}
+
 export function deleteRepoIndex(repoName) {
   const key = String(repoName || '');
   const store = readStore();
@@ -58,6 +63,12 @@ export function deleteRepoIndex(repoName) {
   delete store.repos[key];
   writeStore(store);
   return { deleted: true, record };
+}
+
+export function listAuditEntries(limit = 200) {
+  const max = Math.max(1, Number(limit || 200));
+  const store = readStore();
+  return (store.audit || []).slice(-max).reverse();
 }
 
 export function appendAudit(entry) {
