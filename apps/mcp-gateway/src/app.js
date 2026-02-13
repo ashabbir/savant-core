@@ -5,6 +5,7 @@ import { readSavantContextVersion } from './savant-context.js';
 import { appendAudit, deleteRepoIndex, getRepoIndex, listAuditEntries, listRepoIndexes } from './store.js';
 import { indexRepository } from './indexer.js';
 import { readMemory, searchMemory } from './memory-tools.js';
+import { readCode, searchCode } from './code-tools.js';
 import { errorResponse } from './errors.js';
 import { sendIndexWebhook } from './webhook.js';
 import { validateGatewayAuth } from './auth.js';
@@ -58,6 +59,34 @@ function mcpToolCatalog() {
         required: ['repo', 'path']
       },
       defaults: { repo: '' }
+    },
+    {
+      name: 'code_search',
+      description: 'Search source code lines within a repository.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          repo: { type: 'string', description: 'Indexed repository name' },
+          query: { type: 'string', description: 'Text to find in code files' },
+          limit: { type: 'number', description: 'Maximum matching lines to return' }
+        },
+        required: ['repo', 'query']
+      },
+      defaults: { repo: '', query: 'TODO', limit: 20 }
+    },
+    {
+      name: 'code_read',
+      description: 'Read a code file from a repository by relative path.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          repo: { type: 'string', description: 'Indexed repository name' },
+          path: { type: 'string', description: 'Relative file path' },
+          maxBytes: { type: 'number', description: 'Safety limit for file size in bytes' }
+        },
+        required: ['repo', 'path']
+      },
+      defaults: { repo: '', path: 'README.md', maxBytes: 400000 }
     }
   ];
 }
@@ -288,6 +317,28 @@ export function createApp(options = {}) {
         return res.json({ ok: true, data: { path: filePath, content } });
       }
 
+      if (toolName === 'code_search') {
+        const repoName = String(args?.repo || '').trim();
+        if (!repoName) return errorResponse(res, 400, 'VALIDATION_ERROR', 'repo is required');
+        if (!getRepoIndex(repoName)) return errorResponse(res, 404, 'NOT_FOUND', 'Repo index not found');
+        const query = String(args?.query || '').trim();
+        if (!query) return errorResponse(res, 400, 'VALIDATION_ERROR', 'query is required');
+        const rows = searchCode({ repo: repoName, query, limit: args?.limit });
+        appendAudit({ at: new Date().toISOString(), tool: toolName, repo: repoName, ok: true });
+        return res.json({ ok: true, data: rows });
+      }
+
+      if (toolName === 'code_read') {
+        const repoName = String(args?.repo || '').trim();
+        if (!repoName) return errorResponse(res, 400, 'VALIDATION_ERROR', 'repo is required');
+        if (!getRepoIndex(repoName)) return errorResponse(res, 404, 'NOT_FOUND', 'Repo index not found');
+        const filePath = String(args?.path || '').trim();
+        if (!filePath) return errorResponse(res, 400, 'VALIDATION_ERROR', 'path is required');
+        const file = readCode({ repo: repoName, path: filePath, maxBytes: args?.maxBytes });
+        appendAudit({ at: new Date().toISOString(), tool: toolName, repo: repoName, ok: true });
+        return res.json({ ok: true, data: file });
+      }
+
       return errorResponse(res, 400, 'UNSUPPORTED_TOOL', `Unsupported tool: ${toolName}`);
     } catch (error) {
       const message = String(error?.message || error);
@@ -350,6 +401,26 @@ export function createApp(options = {}) {
         });
         appendAudit({ at: new Date().toISOString(), tool, repo: String(args?.repo || ''), ok: true });
         return res.json({ ok: true, data: { path: String(args?.path || ''), content } });
+      }
+
+      if (tool === 'code_search') {
+        const rows = searchCode({
+          repo: String(args?.repo || ''),
+          query: String(args?.query || ''),
+          limit: args?.limit
+        });
+        appendAudit({ at: new Date().toISOString(), tool, repo: String(args?.repo || ''), ok: true });
+        return res.json({ ok: true, data: rows });
+      }
+
+      if (tool === 'code_read') {
+        const file = readCode({
+          repo: String(args?.repo || ''),
+          path: String(args?.path || ''),
+          maxBytes: args?.maxBytes
+        });
+        appendAudit({ at: new Date().toISOString(), tool, repo: String(args?.repo || ''), ok: true });
+        return res.json({ ok: true, data: file });
       }
 
       return errorResponse(res, 400, 'UNSUPPORTED_TOOL', `Unsupported tool: ${tool}`);

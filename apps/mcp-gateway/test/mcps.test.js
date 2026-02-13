@@ -20,6 +20,7 @@ test('MCP endpoints expose Context MCP and run tools against indexed repos', asy
     repoId: 'repo-1',
     repoName: 'savant-core',
     repoPath: '/tmp/savant-core',
+    worktreePath: '/tmp/savant-core',
     indexedAt: new Date().toISOString(),
     files: [{ chunks: [{ content: 'hello' }] }]
   });
@@ -44,7 +45,9 @@ test('MCP endpoints expose Context MCP and run tools against indexed repos', asy
     const toolsBody = await toolsResponse.json();
     assert.equal(toolsResponse.status, 200);
     assert.equal(Array.isArray(toolsBody.data.tools), true);
-    assert.equal(toolsBody.data.tools.length >= 2, true);
+    assert.equal(toolsBody.data.tools.length >= 4, true);
+    assert.equal(toolsBody.data.tools.some((t) => t.name === 'code_search'), true);
+    assert.equal(toolsBody.data.tools.some((t) => t.name === 'code_read'), true);
 
     const runSearchResponse = await fetch(`http://127.0.0.1:${port}/v1/mcps/context/tools/memory_search/run`, {
       method: 'POST',

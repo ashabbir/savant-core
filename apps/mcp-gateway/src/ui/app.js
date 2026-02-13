@@ -38,6 +38,8 @@ const connectCmdListEl = $('connectCmdList');
 const connectCmdToolsEl = $('connectCmdTools');
 const connectCmdSearchEl = $('connectCmdSearch');
 const connectCmdReadEl = $('connectCmdRead');
+const connectCmdCodeSearchEl = $('connectCmdCodeSearch');
+const connectCmdCodeReadEl = $('connectCmdCodeRead');
 
 tokenInput.value = localStorage.getItem('mcp_gateway_token') || '';
 tokenInput.addEventListener('change', () => {
@@ -82,6 +84,14 @@ function renderConnectInstructions() {
 `curl -s${authSegment} -H 'Content-Type: application/json' \\
   -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/memory_read/run' \\
   -d '{"arguments":{"repo":"${repoName}","path":"memory_bank/README.md"}}'`;
+  connectCmdCodeSearchEl.textContent =
+`curl -s${authSegment} -H 'Content-Type: application/json' \\
+  -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/code_search/run' \\
+  -d '{"arguments":{"repo":"${repoName}","query":"TODO","limit":10}}'`;
+  connectCmdCodeReadEl.textContent =
+`curl -s${authSegment} -H 'Content-Type: application/json' \\
+  -X POST '${baseUrl}/v1/mcps/${encodeURIComponent(mcpId)}/tools/code_read/run' \\
+  -d '{"arguments":{"repo":"${repoName}","path":"README.md"}}'`;
 }
 
 async function fetchJson(url, options = {}) {
