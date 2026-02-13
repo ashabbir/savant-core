@@ -20,6 +20,11 @@ import { createContextQueue } from './context-queue.js';
 import { createRepoObserver } from './repo-observer.js';
 import { createContextIndexWorker } from './context-index-worker.js';
 import { buildReindexPayload, shouldQueueReindex } from './context-sync.js';
+import {
+  parseJarvisContextCommand,
+  executeJarvisContextCommand,
+  formatJarvisContextCommandResult
+} from './jarvis-context-command.js';
 
 const app = express();
 app.use(cors());
@@ -3435,6 +3440,41 @@ app.post('/api/tasks/:taskId/agent-chat/test', async (req, res) => {
 app.post('/api/jarvis/chat', async (req, res) => {
   const parsed = JarvisChat.safeParse(req.body);
   if (!parsed.success) return bad(res, 400, 'Invalid payload', parsed.error.flatten());
+
+  const contextCommand = parseJarvisContextCommand(parsed.data.message);
+  if (contextCommand) {
+    if (contextCommand.type === 'help') {
+      return ok(res, {
+        text: formatJarvisContextCommandResult(contextCommand, null),
+        model: 'context-mcp',
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+      });
+    }
+
+    const gatewayUrl = process.env.CONTEXT_GATEWAY_URL || 'http://localhost:4444';
+    const gatewayToken = process.env.CONTEXT_GATEWAY_TOKEN || '';
+    const result = await executeJarvisContextCommand({
+      command: contextCommand,
+      gatewayUrl,
+      gatewayToken
+    });
+
+    if (!result.ok) {
+      return bad(res, 502, 'Context command failed', result.error || 'unknown-error');
+    }
+
+    await logActivity({
+      action: 'jarvis.context.command',
+      detail: `${contextCommand.tool} repo=${contextCommand.args?.repo || '-'}`,
+      actor: req.user.username
+    });
+
+    return ok(res, {
+      text: formatJarvisContextCommandResult(contextCommand, result.data),
+      model: 'context-mcp',
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+    });
+  }
 
   const gatewayUrl = process.env.TALON_GATEWAY_URL;
   if (!gatewayUrl) return bad(res, 503, 'Talon gateway not configured');

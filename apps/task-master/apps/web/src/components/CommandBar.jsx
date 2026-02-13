@@ -369,6 +369,8 @@ function CommandBar({ inFooter = false }) {
             {history.length === 0 && !isLoadingTranscript && (
               <div className="jarvisEmpty">
                 Start a conversation with Jarvis...
+                <br />
+                Try: <code>/repos</code>, <code>/search savant-core createContextMcpTool</code>, <code>/read savant-core README.md</code>
               </div>
             )}
 
@@ -401,7 +403,7 @@ function CommandBar({ inFooter = false }) {
               className="jarvisInput"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Message Jarvis..."
+              placeholder="Message Jarvis... (/search <repo> <query>)"
               disabled={isSending}
               rows={1}
               onKeyDown={(e) => {
