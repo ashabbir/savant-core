@@ -9,6 +9,53 @@ import { errorResponse } from './errors.js';
 import { sendIndexWebhook } from './webhook.js';
 import { validateGatewayAuth } from './auth.js';
 
+function toRepoSummary(repo) {
+  return {
+    mcp_id: repo.repoName || '',
+    mcp_name: repo.repoName || '',
+    repo_name: repo.repoName || '',
+    repo_id: repo.repoId || '',
+    source_repo_path: repo.sourceRepoPath || repo.repoPath || '',
+    worktree_path: repo.worktreePath || repo.repoPath || '',
+    agent_id: repo.agentId || 'shared',
+    indexed_at: repo.indexedAt || null,
+    files_indexed: Array.isArray(repo.files) ? repo.files.length : 0,
+    chunks_indexed: Array.isArray(repo.files)
+      ? repo.files.reduce((sum, file) => sum + (Array.isArray(file?.chunks) ? file.chunks.length : 0), 0)
+      : 0
+  };
+}
+
+function mcpToolCatalog(mcpId) {
+  return [
+    {
+      name: 'memory_search',
+      description: 'Search semantic memory chunks for this MCP repository.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query text' },
+          limit: { type: 'number', description: 'Maximum number of rows to return' }
+        },
+        required: ['query']
+      },
+      defaults: { repo: mcpId, limit: 8 }
+    },
+    {
+      name: 'memory_read',
+      description: 'Read a full indexed file from this MCP repository by relative path.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Relative file path, for example memory_bank/architecture.md' }
+        },
+        required: ['path']
+      },
+      defaults: { repo: mcpId }
+    }
+  ];
+}
+
 function fireAndForget(promise, onError) {
   Promise.resolve(promise).catch((error) => {
     if (typeof onError === 'function') onError(error);
@@ -125,18 +172,7 @@ export function createApp(options = {}) {
 
   app.get('/v1/index/repos', (_req, res) => {
     const repos = listRepoIndexes();
-    const data = repos.map((repo) => ({
-      repo_name: repo.repoName || '',
-      repo_id: repo.repoId || '',
-      source_repo_path: repo.sourceRepoPath || repo.repoPath || '',
-      worktree_path: repo.worktreePath || repo.repoPath || '',
-      agent_id: repo.agentId || 'shared',
-      indexed_at: repo.indexedAt || null,
-      files_indexed: Array.isArray(repo.files) ? repo.files.length : 0,
-      chunks_indexed: Array.isArray(repo.files)
-        ? repo.files.reduce((sum, file) => sum + (Array.isArray(file?.chunks) ? file.chunks.length : 0), 0)
-        : 0
-    }));
+    const data = repos.map(toRepoSummary);
     return res.json({
       ok: true,
       data: {
@@ -144,6 +180,83 @@ export function createApp(options = {}) {
         repos: data
       }
     });
+  });
+
+  app.get('/v1/mcps', (_req, res) => {
+    const mcps = listRepoIndexes().map(toRepoSummary).sort((a, b) => a.mcp_name.localeCompare(b.mcp_name));
+    return res.json({
+      ok: true,
+      data: {
+        total: mcps.length,
+        mcps
+      }
+    });
+  });
+
+  app.get('/v1/mcps/:mcp_id', (req, res) => {
+    const mcpId = String(req.params.mcp_id || '').trim();
+    const repo = getRepoIndex(mcpId);
+    if (!repo) return errorResponse(res, 404, 'NOT_FOUND', 'MCP not found');
+    const summary = toRepoSummary(repo);
+    const recentAudit = listAuditEntries(200)
+      .filter((entry) => String(entry?.repo || '') === mcpId)
+      .slice(0, 20);
+    return res.json({
+      ok: true,
+      data: {
+        ...summary,
+        dashboard: {
+          status: summary.indexed_at ? 'indexed' : 'unknown',
+          last_updated: summary.indexed_at,
+          recent_audit: recentAudit
+        }
+      }
+    });
+  });
+
+  app.get('/v1/mcps/:mcp_id/tools', (req, res) => {
+    const mcpId = String(req.params.mcp_id || '').trim();
+    const repo = getRepoIndex(mcpId);
+    if (!repo) return errorResponse(res, 404, 'NOT_FOUND', 'MCP not found');
+    return res.json({
+      ok: true,
+      data: {
+        mcp_id: mcpId,
+        tools: mcpToolCatalog(mcpId)
+      }
+    });
+  });
+
+  app.post('/v1/mcps/:mcp_id/tools/:tool_name/run', (req, res) => {
+    const mcpId = String(req.params.mcp_id || '').trim();
+    const toolName = String(req.params.tool_name || '').trim();
+    const repo = getRepoIndex(mcpId);
+    if (!repo) return errorResponse(res, 404, 'NOT_FOUND', 'MCP not found');
+    const args = req.body?.arguments || {};
+
+    try {
+      if (toolName === 'memory_search') {
+        const query = String(args?.query || '').trim();
+        if (!query) return errorResponse(res, 400, 'VALIDATION_ERROR', 'query is required');
+        const rows = search({ query, repo: mcpId, limit: args?.limit });
+        appendAudit({ at: new Date().toISOString(), tool: toolName, repo: mcpId, ok: true });
+        return res.json({ ok: true, data: rows });
+      }
+
+      if (toolName === 'memory_read') {
+        const filePath = String(args?.path || '').trim();
+        if (!filePath) return errorResponse(res, 400, 'VALIDATION_ERROR', 'path is required');
+        const content = read({ path: filePath, repo: mcpId });
+        appendAudit({ at: new Date().toISOString(), tool: toolName, repo: mcpId, ok: true });
+        return res.json({ ok: true, data: { path: filePath, content } });
+      }
+
+      return errorResponse(res, 400, 'UNSUPPORTED_TOOL', `Unsupported tool: ${toolName}`);
+    } catch (error) {
+      const message = String(error?.message || error);
+      appendAudit({ at: new Date().toISOString(), tool: toolName || 'unknown', repo: mcpId, ok: false, error: message });
+      return errorResponse(res, 500, 'TOOL_EXECUTION_FAILED', 'Tool execution failed', message, true);
+    }
   });
 
   app.get('/v1/audit', (req, res) => {

@@ -8,94 +8,126 @@
   </head>
   <body>
     <header class="topbar">
-      <h1>MCP Gateway</h1>
+      <div>
+        <h1>MCP Gateway</h1>
+        <p class="subtitle">Manage MCPs, inspect tools, and run tool calls.</p>
+      </div>
       <div class="topbarActions">
+        <label for="tokenInput">Bearer token</label>
+        <input id="tokenInput" class="input mono" placeholder="optional" />
         <button id="refreshBtn" class="btn">Refresh</button>
       </div>
     </header>
 
-    <main class="layout">
-      <section class="card">
-        <h2>Gateway</h2>
-        <div id="health" class="muted">Loading...</div>
-      </section>
+    <main class="shell">
+      <aside class="sidebar">
+        <div class="sidebarHead">
+          <h2>MCPs</h2>
+          <span id="mcpCount" class="pill">0</span>
+        </div>
+        <div id="mcpList" class="mcpList"></div>
+        <div id="mcpEmpty" class="muted" style="display: none;">No MCP indexes found.</div>
+      </aside>
 
-      <section class="card">
-        <h2>Auth (optional)</h2>
-        <label for="tokenInput">Bearer token</label>
-        <input id="tokenInput" class="input mono" placeholder="Paste token if gateway auth is enabled" />
-      </section>
+      <section class="content">
+        <div class="contentHead">
+          <h2 id="selectedMcpTitle">Select an MCP</h2>
+          <div id="health" class="muted">Checking gateway health...</div>
+        </div>
 
-      <section class="card">
-        <h2>Index Repository</h2>
-        <div class="grid2">
-          <div>
-            <label for="repoIdInput">Repo ID</label>
-            <input id="repoIdInput" class="input mono" placeholder="repo-123" />
-          </div>
-          <div>
-            <label for="repoNameInput">Repo name</label>
-            <input id="repoNameInput" class="input mono" placeholder="savant-core" />
-          </div>
-          <div>
-            <label for="repoPathInput">Path / GitHub URL</label>
-            <input id="repoPathInput" class="input mono" placeholder="/workdir/repos/my-repo or https://github.com/org/repo" />
-          </div>
-          <div>
-            <label for="agentIdInput">Agent ID</label>
-            <input id="agentIdInput" class="input mono" value="shared" />
-          </div>
+        <div class="tabs">
+          <button class="tab active" data-tab="dashboard">Dashboard</button>
+          <button class="tab" data-tab="tools">Tools</button>
+          <button class="tab" data-tab="run">Run Tool</button>
         </div>
-        <div class="row">
-          <button id="indexBtn" class="btn primary">Index</button>
-          <span id="indexMsg" class="muted"></span>
-        </div>
-      </section>
 
-      <section class="card">
-        <h2>Indexed Repositories</h2>
-        <div id="repoSummary" class="muted">Loading...</div>
-        <div class="tableWrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Repo ID</th>
-                <th>Agent</th>
-                <th>Files</th>
-                <th>Chunks</th>
-                <th>Indexed At</th>
-                <th>Source</th>
-                <th>Worktree</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="repoRows"></tbody>
-          </table>
-        </div>
-      </section>
+        <section id="tab-dashboard" class="panel active">
+          <div class="card">
+            <h3>MCP Dashboard</h3>
+            <div id="dashboardSummary" class="grid grid3"></div>
+            <div class="row">
+              <button id="deleteMcpBtn" class="btn danger" disabled>Delete MCP Index</button>
+              <span id="dashboardMsg" class="muted"></span>
+            </div>
+          </div>
 
-      <section class="card">
-        <h2>Audit Log</h2>
-        <div class="row">
-          <label for="auditLimitInput">Limit</label>
-          <input id="auditLimitInput" class="input mono small" value="100" />
-          <button id="reloadAuditBtn" class="btn">Reload</button>
-        </div>
-        <div class="tableWrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Tool</th>
-                <th>Repo</th>
-                <th>OK</th>
-                <th>Error</th>
-              </tr>
-            </thead>
-            <tbody id="auditRows"></tbody>
-          </table>
-        </div>
+          <div class="card">
+            <h3>Index New Repository</h3>
+            <div class="grid grid2">
+              <div>
+                <label for="repoIdInput">Repo ID</label>
+                <input id="repoIdInput" class="input mono" placeholder="repo-123" />
+              </div>
+              <div>
+                <label for="repoNameInput">MCP / Repo Name</label>
+                <input id="repoNameInput" class="input mono" placeholder="savant-core" />
+              </div>
+              <div>
+                <label for="repoPathInput">Path / GitHub URL</label>
+                <input id="repoPathInput" class="input mono" placeholder="/workdir/repos/savant-core or https://github.com/org/repo" />
+              </div>
+              <div>
+                <label for="agentIdInput">Agent ID</label>
+                <input id="agentIdInput" class="input mono" value="shared" />
+              </div>
+            </div>
+            <div class="row">
+              <button id="indexBtn" class="btn primary">Index</button>
+              <span id="indexMsg" class="muted"></span>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Recent MCP Audit</h3>
+            <div class="tableWrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Tool</th>
+                    <th>OK</th>
+                    <th>Error</th>
+                  </tr>
+                </thead>
+                <tbody id="dashboardAuditRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-tools" class="panel">
+          <div class="card">
+            <h3>Tools</h3>
+            <div id="toolsList" class="toolsList"></div>
+          </div>
+        </section>
+
+        <section id="tab-run" class="panel">
+          <div class="card">
+            <h3>Run Tool</h3>
+            <div class="grid grid2">
+              <div>
+                <label for="toolSelect">Tool</label>
+                <select id="toolSelect" class="input mono"></select>
+              </div>
+              <div>
+                <label for="runPresetBtn">Input</label>
+                <button id="runPresetBtn" class="btn">Use Tool Defaults</button>
+              </div>
+            </div>
+            <label for="toolArgsInput">Arguments JSON</label>
+            <textarea id="toolArgsInput" class="input mono textarea" rows="10"></textarea>
+            <div class="row">
+              <button id="runToolBtn" class="btn primary">Run</button>
+              <span id="runMsg" class="muted"></span>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Result</h3>
+            <pre id="runResult" class="result mono">Select an MCP and run a tool.</pre>
+          </div>
+        </section>
       </section>
     </main>
 
